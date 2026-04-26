@@ -24,6 +24,7 @@ export const ECOFLOW_CMDS = {
           cmdCode: "WN511_SET_AC_INCHARGE_SPEED_PACK",
           params: { chgWatts: Math.round(watts), chgPauseFlag: 0 },
         };
+      case "DELTA_MAX":
       case "DELTA_2":
       default:
         return {
@@ -41,6 +42,7 @@ export const ECOFLOW_CMDS = {
           cmdCode: "WN511_SET_AC_OUT_PWR_PACK",
           params: { outWatts: Math.round(watts) },
         };
+      case "DELTA_MAX":
       case "DELTA_2":
       default:
         return {

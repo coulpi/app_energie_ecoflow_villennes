@@ -27,18 +27,26 @@ export function getEcoFlowClient() {
  * Extrait des champs usuels du payload quota EcoFlow. Le mapping diffère
  * légèrement par modèle ; on liste les chemins les plus courants.
  */
-export function extractEcoFlowMetrics(quota: Record<string, unknown>): {
+export function extractEcoFlowMetrics(payload: Record<string, unknown>): {
   soc: number | null;
   inputW: number | null;
   outputW: number | null;
 } {
-  const get = (k: string): unknown => {
-    const direct = quota[k];
-    if (direct !== undefined) return direct;
-    for (const v of Object.values(quota)) {
-      if (v && typeof v === "object" && !Array.isArray(v)) {
-        const nested = (v as Record<string, unknown>)[k];
-        if (nested !== undefined) return nested;
+  // Le payload MQTT EcoFlow a la forme :
+  //   { id, cmdId, params: { "bmsMaster.soc": 39, "bmsMaster.inputWatts": 0, ... } }
+  // ou directement à plat selon le firmware. On regarde dans `params` puis
+  // à la racine, et on accepte les clés avec et sans préfixe `bmsMaster.` /
+  // `pd.` / `inv.`.
+  const sources: Record<string, unknown>[] = [];
+  if (payload.params && typeof payload.params === "object") {
+    sources.push(payload.params as Record<string, unknown>);
+  }
+  sources.push(payload);
+
+  const get = (...keys: string[]): unknown => {
+    for (const src of sources) {
+      for (const k of keys) {
+        if (src[k] !== undefined) return src[k];
       }
     }
     return undefined;
@@ -46,11 +54,29 @@ export function extractEcoFlowMetrics(quota: Record<string, unknown>): {
   const num = (v: unknown): number | null =>
     typeof v === "number" && Number.isFinite(v) ? v : null;
 
-  return {
-    soc: num(get("soc") ?? get("f32ShowSoc") ?? get("bmsBattSoc")),
-    inputW: num(get("inputWatts") ?? get("wattsInputSum")),
-    outputW: num(get("outputWatts") ?? get("wattsOutputSum")),
-  };
+  const soc = num(
+    get("bmsMaster.soc", "soc", "f32ShowSoc", "bmsBattSoc", "pd.soc"),
+  );
+  const inputW = num(
+    get(
+      "bmsMaster.inputWatts",
+      "inputWatts",
+      "wattsInputSum",
+      "pd.wattsInputSum",
+      "inv.inputWatts",
+    ),
+  );
+  const outputW = num(
+    get(
+      "bmsMaster.outputWatts",
+      "outputWatts",
+      "wattsOutputSum",
+      "pd.wattsOutputSum",
+      "inv.outputWatts",
+    ),
+  );
+
+  return { soc, inputW, outputW };
 }
 
 export async function startEcoFlowMqtt(): Promise<void> {
@@ -74,11 +100,30 @@ export async function startEcoFlowMqtt(): Promise<void> {
         const metrics = extractEcoFlowMetrics(
           payload as Record<string, unknown>,
         );
+        // Convention : powerW signé positivement quand la batterie injecte
+        // (output), négativement quand elle se charge (input).
+        let powerW: number | null = null;
+        if (metrics.outputW !== null && metrics.outputW > 0) {
+          powerW = metrics.outputW;
+        } else if (metrics.inputW !== null && metrics.inputW > 0) {
+          powerW = -metrics.inputW;
+        } else if (metrics.outputW !== null || metrics.inputW !== null) {
+          powerW = 0;
+        }
+        // Si le message MQTT n'apporte aucune des 3 métriques utiles, on
+        // évite d'écrire une ligne vide.
+        if (
+          metrics.soc === null &&
+          metrics.inputW === null &&
+          metrics.outputW === null
+        ) {
+          return;
+        }
         await prisma.reading.create({
           data: {
             deviceId: device.id,
             ts: new Date(),
-            powerW: metrics.outputW ?? metrics.inputW ?? null,
+            powerW,
             soc: metrics.soc,
             raw: payload as object,
           },

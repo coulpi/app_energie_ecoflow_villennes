@@ -19,6 +19,7 @@ export default function RootLayout({
           <Link href="/" className="font-semibold">⚡ EcoFlow Villennes</Link>
           <nav className="flex gap-4 text-sm text-zinc-400">
             <Link href="/" className="hover:text-zinc-100">Tableau de bord</Link>
+            <Link href="/flow" className="hover:text-zinc-100">Flux</Link>
             <Link href="/devices" className="hover:text-zinc-100">Équipements</Link>
             <Link href="/history" className="hover:text-zinc-100">Historique</Link>
             <Link href="/rules" className="hover:text-zinc-100">Règles</Link>
