@@ -128,10 +128,26 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
           }
         />
         <Kpi
-          label="Niveau batterie"
-          value={soc === null ? "— %" : `${Math.round(soc)} %`}
+          label={
+            batteryCharge > 1
+              ? "Batterie charge"
+              : batteryDischarge > 1
+                ? "Batterie décharge"
+                : "Niveau batterie"
+          }
+          value={
+            batteryCharge > 1
+              ? fmtW(batteryCharge)
+              : batteryDischarge > 1
+                ? fmtW(batteryDischarge)
+                : soc === null
+                  ? "— %"
+                  : `${Math.round(soc)} %`
+          }
           status={
-            batteryCharge > 1 ? "charge" : batteryDischarge > 1 ? "décharge" : "idle"
+            soc === null
+              ? "—"
+              : `SoC ${Math.round(soc)} %${batteryCharge > 1 ? " · charge" : batteryDischarge > 1 ? " · décharge" : ""}`
           }
           tone={C.battery}
           icon={
@@ -277,15 +293,21 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
             x={185}
             y={400}
             color={C.battery}
-            label="Batterie"
-            value={soc === null ? "— %" : `${Math.round(soc)} %`}
-            sub={
+            label={
               batteryCharge > 1
-                ? `chg ${fmtW(batteryCharge)}`
+                ? "Batterie · charge"
                 : batteryDischarge > 1
-                  ? `dch ${fmtW(batteryDischarge)}`
-                  : "idle"
+                  ? "Batterie · décharge"
+                  : "Batterie · idle"
             }
+            value={
+              batteryCharge > 1
+                ? fmtW(batteryCharge)
+                : batteryDischarge > 1
+                  ? fmtW(batteryDischarge)
+                  : "0 W"
+            }
+            sub={soc === null ? "— %" : `${Math.round(soc)} %`}
             icon="battery"
             r={56}
             dim={batteryCharge < 1 && batteryDischarge < 1}
