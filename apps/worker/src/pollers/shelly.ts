@@ -13,11 +13,19 @@ export async function pollShellyOnce(): Promise<void> {
     devices.map(async (d) => {
       try {
         const reading = await shellyNs.fetchShellyStatus(d.externalId);
+        const meta = (d.vendorMeta as { invertSign?: boolean } | null) ?? null;
+        const invert = meta?.invertSign === true;
+        const powerW =
+          reading.powerW === null
+            ? null
+            : invert
+              ? -reading.powerW
+              : reading.powerW;
         await prisma.reading.create({
           data: {
             deviceId: d.id,
             ts: new Date(),
-            powerW: reading.powerW,
+            powerW,
             energyWh: reading.energyWh,
             raw: reading.raw as object,
           },
