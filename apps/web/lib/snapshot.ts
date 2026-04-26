@@ -39,13 +39,16 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     prisma.controlState.findUnique({ where: { key: "default" } }),
   ]);
 
-  const productionW = prod?.powerW ?? null;
+  let productionW = prod?.powerW ?? null;
   const gridW = grid?.powerW ?? null;
-  // Si pas de compteur conso dédié mais compteur réseau bidirectionnel +
-  // production, on calcule : conso = production + net_grid (+ = import).
   let consumptionW = cons?.powerW ?? null;
+  // Dérivation : selon les capteurs disponibles, on complète une mesure
+  // manquante à partir des deux autres (production + net_grid = conso).
   if (consumptionW === null && productionW !== null && gridW !== null) {
     consumptionW = productionW + gridW;
+  }
+  if (productionW === null && consumptionW !== null && gridW !== null) {
+    productionW = Math.max(0, consumptionW - gridW);
   }
   // Surplus : ce qui sort vers le réseau si grid signé < 0, sinon
   // production - consommation (équivalent).

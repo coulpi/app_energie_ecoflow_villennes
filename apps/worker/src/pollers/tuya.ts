@@ -37,7 +37,10 @@ export async function pollTuyaOnce(): Promise<void> {
         const status = await c.getDeviceStatus(d.externalId);
         // GRID_METER : on conserve le signe (+ import / - export).
         const signed = d.role === "GRID_METER";
-        const powerW = TuyaClient.extractPowerW(status, signed);
+        const meta = (d.vendorMeta as { invertSign?: boolean } | null) ?? null;
+        const invert = meta?.invertSign === true;
+        let powerW = TuyaClient.extractPowerW(status, signed);
+        if (powerW !== null && invert) powerW = -powerW;
         const energyWh = TuyaClient.extractEnergyWh(status);
         const switchOn =
           d.type === "TUYA_SWITCH" ? TuyaClient.extractSwitchOn(status) : null;
