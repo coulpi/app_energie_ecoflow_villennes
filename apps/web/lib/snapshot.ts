@@ -1,5 +1,54 @@
 import { prisma } from "./prisma";
 
+const BATTERY_CAPACITY_WH = 2016; // Delta Max 2000
+
+/**
+ * Estime la puissance batterie depuis la dérive du SoC sur 10-15 min.
+ * Convention : + = décharge (sortie AC), - = charge.
+ */
+async function estimateBatteryFromSocDrift(): Promise<number | null> {
+  const now = Date.now();
+  const since = new Date(now - 20 * 60_000);
+  const battery = await prisma.device.findFirst({
+    where: { enabled: true, role: "BATTERY" },
+  });
+  if (!battery) return null;
+  const samples = await prisma.reading.findMany({
+    where: {
+      deviceId: battery.id,
+      ts: { gte: since },
+      soc: { not: null },
+    },
+    orderBy: { ts: "asc" },
+    select: { ts: true, soc: true },
+  });
+  if (samples.length < 2) return null;
+
+  const newest = samples[samples.length - 1]!;
+  // On cherche un échantillon entre 5 et 15 min avant le plus récent.
+  const tNew = newest.ts.getTime();
+  let oldest: { ts: Date; soc: number | null } | null = null;
+  for (const s of samples) {
+    const dt = (tNew - s.ts.getTime()) / 60_000;
+    if (dt >= 5 && dt <= 20) {
+      oldest = s;
+      break;
+    }
+  }
+  if (!oldest || oldest.soc === null || newest.soc === null) return null;
+
+  const minutesElapsed = (tNew - oldest.ts.getTime()) / 60_000;
+  if (minutesElapsed < 5) return null;
+
+  const deltaSoc = newest.soc - oldest.soc; // % positif = chargé
+  if (Math.abs(deltaSoc) < 0.5) return 0; // pas de dérive significative
+  const deltaWh = (deltaSoc / 100) * BATTERY_CAPACITY_WH;
+  const watts = (deltaWh * 60) / minutesElapsed;
+  // SoC monte → charge (puissance batterie négative dans notre convention).
+  // SoC descend → décharge (puissance positive).
+  return -watts;
+}
+
 export interface DashboardSnapshot {
   ts: string;
   productionW: number | null;
@@ -42,17 +91,30 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   let productionW = prod?.powerW ?? null;
   let gridW = grid?.powerW ?? null;
   let consumptionW = cons?.powerW ?? null;
-  // Dérivation : selon les capteurs disponibles, on complète une mesure
-  // manquante à partir des deux autres.
-  //   net_grid = consumption - production  (+ = import, - = export)
+  // Calcule batteryPowerW d'abord (logique plus bas), nécessaire pour
+  // une dérivation correcte de la consommation.
+  let batteryPowerW: number | null = bat?.powerW ?? null;
+  if ((batteryPowerW === null || batteryPowerW === 0) && sw) {
+    if (sw.switchOn === true && sw.powerW !== null && sw.powerW > 5) {
+      batteryPowerW = -sw.powerW;
+    }
+  }
+  if (batteryPowerW === null || batteryPowerW === 0) {
+    const estimated = await estimateBatteryFromSocDrift();
+    if (estimated !== null) batteryPowerW = estimated;
+  }
+  // Bilan énergétique global :
+  //   prod + grid_signed + bat_signed = consumption
+  //   (grid_signed : + import, - export ; bat_signed : + décharge, - charge)
+  const batForBalance = batteryPowerW ?? 0;
   if (consumptionW === null && productionW !== null && gridW !== null) {
-    consumptionW = productionW + gridW;
+    consumptionW = productionW + gridW + batForBalance;
   }
   if (productionW === null && consumptionW !== null && gridW !== null) {
-    productionW = Math.max(0, consumptionW - gridW);
+    productionW = Math.max(0, consumptionW - gridW - batForBalance);
   }
   if (gridW === null && productionW !== null && consumptionW !== null) {
-    gridW = consumptionW - productionW;
+    gridW = consumptionW - productionW - batForBalance;
   }
   // Surplus : ce qui sort vers le réseau si grid signé < 0, sinon
   // production - consommation (équivalent).
@@ -63,17 +125,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         ? productionW - consumptionW
         : null;
 
-  // Puissance batterie : préférer la valeur du BMS, sinon dériver depuis
-  // la prise AC. Le BMS Delta Max remonte souvent 0 W via MQTT alors que
-  // la batterie charge réellement — la prise AC en amont, elle, mesure la
-  // consommation réelle du chargeur (signe inversé : prise consomme >0
-  // = batterie charge donc powerW négatif côté batterie).
-  let batteryPowerW: number | null = bat?.powerW ?? null;
-  if ((batteryPowerW === null || batteryPowerW === 0) && sw) {
-    if (sw.switchOn === true && sw.powerW !== null && sw.powerW > 5) {
-      batteryPowerW = -sw.powerW;
-    }
-  }
+  // Puissance batterie déjà calculée plus haut pour le bilan.
 
   return {
     ts: new Date().toISOString(),
