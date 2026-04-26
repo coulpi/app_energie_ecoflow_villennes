@@ -112,33 +112,15 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const measuredConsumptionW = cons?.powerW ?? null;
   let consumptionW: number | null = null; // sera calculé par bilan
   let batteryPowerW: number | null = bat?.powerW ?? null;
-  // Seuil de détection : la consommation interne du BMS / inverter EcoFlow
-  // (5-30 W typiquement) ne doit pas être interprétée comme une décharge
-  // utile. On considère la batterie idle en deçà.
-  if (batteryPowerW !== null && Math.abs(batteryPowerW) < 30) {
-    batteryPowerW = 0;
-  }
-  // Cohérence avec la prise AC : si la prise est OFF, la batterie ne peut
-  // pas charger via AC. Une valeur "charging" issue du calcul amp×vol
-  // (cell balancing, micro-courants internes) doit être ignorée.
-  if (
-    sw?.switchOn === false &&
-    batteryPowerW !== null &&
-    batteryPowerW < 0 // < 0 = charge dans notre convention
-  ) {
-    batteryPowerW = 0;
-  }
 
-  // 1) Bilan énergétique direct : si on a la conso mesurée + prod + grid,
-  //    bat = cons - prod - grid (le plus précis possible).
+  // 1) Si l'API privée (BMS) ne donne rien, on tente le bilan énergétique.
   if (
-    (batteryPowerW === null || batteryPowerW === 0) &&
+    batteryPowerW === null &&
     measuredConsumptionW !== null &&
     productionW !== null &&
     gridW !== null
   ) {
     const balanceBat = measuredConsumptionW - productionW - gridW;
-    // Garde-fou : Delta Max max 2200 W, et bruit < 30 W = idle.
     if (Math.abs(balanceBat) > 30) {
       batteryPowerW = Math.max(-2200, Math.min(2200, balanceBat));
     } else {
@@ -146,8 +128,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     }
   }
 
-  // 2) Prise AC : si ON et conso > 5 W → charge.
-  if ((batteryPowerW === null || batteryPowerW === 0) && sw) {
+  // 2) Si toujours rien, prise AC charging (ON + powerW > 5).
+  if (batteryPowerW === null && sw) {
     if (sw.switchOn === true && sw.powerW !== null && sw.powerW > 5) {
       batteryPowerW = -sw.powerW;
     }
@@ -169,6 +151,22 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   if (batteryPowerW === null) {
     const estimated = await estimateBatteryFromSocDrift();
     if (estimated !== null) batteryPowerW = estimated;
+  }
+
+  // === GUARDS APPLIQUÉS À LA FIN (après toutes les sources) ===
+  // (a) Seuil 30 W : la consommation interne du BMS / inverter EcoFlow ne
+  //     doit pas être interprétée comme une décharge utile.
+  if (batteryPowerW !== null && Math.abs(batteryPowerW) < 30) {
+    batteryPowerW = 0;
+  }
+  // (b) Cohérence prise AC : si la prise est OFF, la batterie ne peut pas
+  //     se charger via AC. Toute valeur "charging" est rejetée.
+  if (
+    sw?.switchOn === false &&
+    batteryPowerW !== null &&
+    batteryPowerW < 0
+  ) {
+    batteryPowerW = 0;
   }
 
   // Conso = somme prod + grid + bat (bilan énergétique forcé pour cohérence
