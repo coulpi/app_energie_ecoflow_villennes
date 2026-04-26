@@ -15,6 +15,7 @@
     "@app/shared": "workspace:*",
     "@prisma/client": "^5.20.0",
     "mqtt": "^5.10.0",
+    "undici": "^6.20.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

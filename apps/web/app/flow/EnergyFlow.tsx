@@ -88,6 +88,8 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
         </div>
       </header>
 
+      <BalanceBanner gridW={grid} surplusW={exportToGrid - importFromGrid} />
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi
           label="Production solaire"
@@ -324,6 +326,95 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
           </span>
           <span>épaisseur ∝ puissance</span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function BalanceBanner({
+  gridW,
+  surplusW,
+}: {
+  gridW: number;
+  surplusW: number;
+}) {
+  // gridW signé : + import, - export. surplusW déjà calculé : + export, - import.
+  if (Math.abs(gridW) < 30) {
+    return (
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 flex items-center gap-4">
+        <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-2xl">
+          ⚖
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-500">
+            Bilan instantané
+          </div>
+          <div className="text-2xl font-semibold text-zinc-200">
+            Équilibré
+          </div>
+          <div className="text-xs text-zinc-500">
+            production ≈ consommation, peu d'échange réseau
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const exporting = surplusW > 0;
+  const value = Math.round(Math.abs(surplusW));
+  return (
+    <div
+      className="rounded-2xl border p-5 flex items-center gap-5"
+      style={{
+        backgroundColor: exporting
+          ? "rgba(16,185,129,0.08)"
+          : "rgba(245,158,11,0.08)",
+        borderColor: exporting
+          ? "rgba(16,185,129,0.4)"
+          : "rgba(245,158,11,0.4)",
+        boxShadow: exporting
+          ? "0 0 30px rgba(16,185,129,0.15)"
+          : "0 0 30px rgba(245,158,11,0.15)",
+      }}
+    >
+      <div
+        className="w-14 h-14 rounded-full flex items-center justify-center text-3xl"
+        style={{
+          backgroundColor: exporting
+            ? "rgba(16,185,129,0.18)"
+            : "rgba(245,158,11,0.18)",
+        }}
+      >
+        {exporting ? "↗" : "↘"}
+      </div>
+      <div className="flex-1">
+        <div
+          className="text-[10px] uppercase tracking-[0.25em] mb-1"
+          style={{ color: exporting ? "#10b981" : "#f59e0b" }}
+        >
+          {exporting ? "Surplus · vous exportez" : "Déficit · vous importez"}
+        </div>
+        <div
+          className="text-4xl font-bold tabular-nums leading-none"
+          style={{ color: exporting ? "#10b981" : "#f59e0b" }}
+        >
+          {value} W
+        </div>
+        <div className="text-xs text-zinc-400 mt-1.5">
+          {exporting
+            ? "Production solaire supérieure à la consommation — l'excédent part vers le réseau"
+            : "Consommation supérieure à la production — vous tirez du réseau"}
+        </div>
+      </div>
+      <div
+        className="hidden sm:block text-xs px-3 py-1.5 rounded-lg font-mono"
+        style={{
+          backgroundColor: exporting
+            ? "rgba(16,185,129,0.15)"
+            : "rgba(245,158,11,0.15)",
+          color: exporting ? "#34d399" : "#fbbf24",
+        }}
+      >
+        {exporting ? "EXPORT" : "IMPORT"}
       </div>
     </div>
   );
