@@ -14,6 +14,14 @@ interface FlowSnapshot {
 
 const POLL_MS = 5000;
 
+const C = {
+  solar: "#f59e0b",
+  house: "#10b981",
+  grid: "#06b6d4",
+  battery: "#a855f7",
+  inactive: "#3a3f4d",
+} as const;
+
 export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
   const [snap, setSnap] = useState<FlowSnapshot>(initial);
 
@@ -30,9 +38,6 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
     return () => clearInterval(id);
   }, []);
 
-  // Décompose les flux observés.
-  // grid_W : + import, - export
-  // batteryPowerW : + injection (décharge), - charge (input)
   const prod = snap.productionW ?? 0;
   const cons = snap.consumptionW ?? 0;
   const grid = snap.gridW ?? 0;
@@ -42,16 +47,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
   const fmtW = (v: number) =>
     Math.abs(v) < 1 ? "0 W" : `${Math.round(Math.abs(v))} W`;
 
-  // Calcul des flux directionnels affichés sur les arêtes.
-  // pv → maison : min(prod, cons)
-  // pv → grid (export) : max(0, -grid si grid négatif)
-  // pv → batterie (charge) : max(0, -bat si bat négatif)
-  // grid → maison (import) : max(0, grid)
-  // batterie → maison (décharge) : max(0, bat)
-  //
-  // Les valeurs de production sont soit consommées, soit exportées, soit
-  // utilisées pour charger la batterie. La répartition exacte n'étant pas
-  // mesurée directement, on l'estime en privilégiant l'auto-conso :
+  // Flux directionnels.
   const pvToHouse = Math.min(prod, cons);
   const exportToGrid = Math.max(0, -grid);
   const importFromGrid = Math.max(0, grid);
@@ -59,308 +55,465 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
   const batteryCharge = Math.max(0, -bat);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">Flux d'énergie</h1>
-        <span className="text-xs text-zinc-500">
-          MAJ {new Date(snap.ts).toLocaleTimeString("fr-FR")} · auto 5 s
-        </span>
+    <div className="space-y-6">
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Flux d'énergie</h1>
+          <p className="text-xs text-zinc-400 flex items-center gap-2 mt-1">
+            <span>Vue temps réel</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              En direct
+            </span>
+          </p>
+        </div>
+        <div className="hidden sm:flex items-center gap-2">
+          <button className="bg-zinc-900/80 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs flex items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-3.5 h-3.5">
+              <rect x="4" y="5" width="16" height="16" rx="2" />
+              <path d="M4 9h16M9 3v4M15 3v4" strokeLinecap="round" />
+            </svg>
+            Aujourd'hui
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-3 h-3">
+              <path d="m6 9 6 6 6-6" strokeLinecap="round" />
+            </svg>
+          </button>
+          <button className="bg-zinc-900/80 border border-zinc-800 rounded-lg w-9 h-9 flex items-center justify-center">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+              <circle cx="5" cy="12" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="19" cy="12" r="1.5" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi
+          label="Production solaire"
+          value={fmtW(prod)}
+          status={prod > 1 ? "En cours" : "idle"}
+          tone={C.solar}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" strokeLinecap="round" />
+            </svg>
+          }
+        />
+        <Kpi
+          label="Consommation maison"
+          value={fmtW(cons)}
+          status={cons > 1 ? "En cours" : "idle"}
+          tone={C.house}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M3 12 12 4l9 8" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M5 10v10h14V10" strokeLinejoin="round" />
+            </svg>
+          }
+        />
+        <Kpi
+          label={importFromGrid > exportToGrid ? "Import réseau" : "Export réseau"}
+          value={fmtW(grid)}
+          status={Math.abs(grid) > 1 ? "En cours" : "idle"}
+          tone={C.grid}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M12 3v18" strokeLinecap="round" />
+              <path d="m6 21 6-6 6 6M8 11h8M9 7h6" strokeLinecap="round" />
+            </svg>
+          }
+        />
+        <Kpi
+          label="Niveau batterie"
+          value={soc === null ? "— %" : `${Math.round(soc)} %`}
+          status={
+            batteryCharge > 1 ? "charge" : batteryDischarge > 1 ? "décharge" : "idle"
+          }
+          tone={C.battery}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <rect x="4" y="7" width="14" height="10" rx="2" />
+              <path d="M19 10v4M8 10v4M11 10v4" strokeLinecap="round" />
+            </svg>
+          }
+        />
       </div>
 
-      <svg
-        viewBox="0 0 800 480"
-        className="w-full max-w-4xl mx-auto"
-        style={{ minHeight: 480 }}
-      >
-        <defs>
-          {/* Marqueur de flèche */}
-          <marker
-            id="arrow"
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="5"
-            markerHeight="5"
-            orient="auto"
-          >
-            <path d="M0,0 L10,5 L0,10 z" fill="#10b981" />
-          </marker>
-          <marker
-            id="arrow-warn"
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="5"
-            markerHeight="5"
-            orient="auto"
-          >
-            <path d="M0,0 L10,5 L0,10 z" fill="#f59e0b" />
-          </marker>
+      <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 sm:p-6">
+        <svg
+          viewBox="0 0 1000 540"
+          className="w-full h-auto"
+          style={{ maxHeight: 580 }}
+        >
+          <defs>
+            <filter id="glow-solar" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="b" />
+              <feMerge>
+                <feMergeNode in="b" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glow-strong" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="10" result="b" />
+              <feMerge>
+                <feMergeNode in="b" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
 
-          <style>{`
-            @keyframes flow-dash {
-              to { stroke-dashoffset: -24; }
+            {/* Marqueur chevron pour flux actifs */}
+            <marker
+              id="chev-active"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="4"
+              markerHeight="4"
+              orient="auto"
+            >
+              <path d="M0,0 L10,5 L0,10 L3,5 z" fill="#22c55e" />
+            </marker>
+
+            <style>{`
+              @keyframes flow-dash { to { stroke-dashoffset: -40; } }
+              .flow-line {
+                stroke-dasharray: 12 18;
+                animation: flow-dash 1.4s linear infinite;
+                filter: drop-shadow(0 0 4px rgba(34,197,94,0.6));
+              }
+              .flow-rail {
+                stroke: rgba(34,197,94,0.18);
+                stroke-width: 6;
+                fill: none;
+                stroke-linecap: round;
+              }
+              .flow-idle {
+                stroke: ${C.inactive};
+                stroke-width: 2;
+                stroke-dasharray: 6 6;
+                fill: none;
+                stroke-linecap: round;
+              }
+              @keyframes pulse-ring {
+                0%, 100% { opacity: 0.6; }
+                50% { opacity: 1; }
+              }
+              .ring-pulse {
+                animation: pulse-ring 2s ease-in-out infinite;
+              }
+            `}</style>
+          </defs>
+
+          {/* Connexions */}
+
+          {/* PV → Maison (vertical) */}
+          <FlowPath
+            d="M 500 195 V 360"
+            active={pvToHouse > 1}
+            width={powerWidth(pvToHouse)}
+          />
+          {/* PV → Réseau (horizontal puis courbe descendante) */}
+          <FlowPath
+            d="M 565 145 H 760 Q 820 145 820 200 V 320"
+            active={exportToGrid > 1}
+            width={powerWidth(exportToGrid)}
+          />
+          {/* Réseau → Maison (import) */}
+          <FlowPath
+            d="M 820 380 Q 820 430 760 430 H 580"
+            active={importFromGrid > 1}
+            width={powerWidth(importFromGrid)}
+          />
+          {/* Batterie → Maison (décharge) */}
+          <FlowPath
+            d="M 245 420 Q 320 440 425 425"
+            active={batteryDischarge > 1}
+            width={powerWidth(batteryDischarge)}
+          />
+          {/* PV → Batterie (charge depuis surplus) */}
+          <FlowPath
+            d="M 440 170 Q 320 180 230 350"
+            active={batteryCharge > 1}
+            width={powerWidth(batteryCharge)}
+          />
+          {/* Maison ⇢ Batterie (rail inactif décoratif quand batterie idle) */}
+          {batteryCharge < 1 && batteryDischarge < 1 && (
+            <path d="M 425 420 L 245 410" className="flow-idle" />
+          )}
+
+          {/* Nœuds */}
+          <Node
+            x={500}
+            y={145}
+            color={C.solar}
+            label="Panneaux"
+            value={fmtW(prod)}
+            icon="solar"
+            r={62}
+          />
+          <Node
+            x={500}
+            y={420}
+            color={C.house}
+            label="Maison"
+            value={fmtW(cons)}
+            icon="house"
+            r={62}
+          />
+          <Node
+            x={820}
+            y={350}
+            color={C.grid}
+            label={importFromGrid > exportToGrid ? "Réseau (import)" : "Réseau (export)"}
+            value={fmtW(grid)}
+            icon="grid"
+            r={56}
+          />
+          <Node
+            x={185}
+            y={400}
+            color={C.battery}
+            label="Batterie"
+            value={soc === null ? "— %" : `${Math.round(soc)} %`}
+            sub={
+              batteryCharge > 1
+                ? `chg ${fmtW(batteryCharge)}`
+                : batteryDischarge > 1
+                  ? `dch ${fmtW(batteryDischarge)}`
+                  : "idle"
             }
-            .flow-active {
-              stroke-dasharray: 6 6;
-              animation: flow-dash 1s linear infinite;
-            }
-            .flow-idle {
-              stroke: #2a2a2a;
-              stroke-width: 2;
-            }
-          `}</style>
-        </defs>
-
-        {/* Lignes de flux (sous les nœuds) */}
-
-        {/* PV (haut centre) → Maison (centre) */}
-        <FlowLine
-          x1={400}
-          y1={120}
-          x2={400}
-          y2={240}
-          active={pvToHouse > 1}
-          color="#10b981"
-          width={powerWidth(pvToHouse)}
-        />
-        {/* PV → Grid (haut centre → droite) */}
-        <FlowLine
-          x1={400}
-          y1={90}
-          x2={680}
-          y2={90}
-          active={exportToGrid > 1}
-          color="#10b981"
-          width={powerWidth(exportToGrid)}
-        />
-        {/* Grid → Maison (droite → centre) */}
-        <FlowLine
-          x1={680}
-          y1={300}
-          x2={500}
-          y2={300}
-          active={importFromGrid > 1}
-          color="#f59e0b"
-          width={powerWidth(importFromGrid)}
-        />
-        {/* PV → Batterie (haut centre → gauche/bas) */}
-        <FlowLine
-          x1={300}
-          y1={150}
-          x2={120}
-          y2={300}
-          active={batteryCharge > 1}
-          color="#10b981"
-          width={powerWidth(batteryCharge)}
-        />
-        {/* Batterie → Maison (gauche/bas → centre) */}
-        <FlowLine
-          x1={120}
-          y1={360}
-          x2={350}
-          y2={360}
-          active={batteryDischarge > 1}
-          color="#10b981"
-          width={powerWidth(batteryDischarge)}
-        />
-
-        {/* Nœuds */}
-        <Node
-          x={400}
-          y={70}
-          icon="☀"
-          label="Panneaux"
-          value={fmtW(prod)}
-          color="#facc15"
-        />
-        <Node
-          x={400}
-          y={290}
-          icon="🏠"
-          label="Maison"
-          value={fmtW(cons)}
-          color="#a3e635"
-          big
-        />
-        <Node
-          x={700}
-          y={195}
-          icon="⚡"
-          label={importFromGrid > exportToGrid ? "Réseau (import)" : "Réseau (export)"}
-          value={fmtW(grid)}
-          color={
-            importFromGrid > 1 ? "#f59e0b" : exportToGrid > 1 ? "#10b981" : "#a1a1aa"
-          }
-        />
-        <Node
-          x={100}
-          y={330}
-          icon="🔋"
-          label="Batterie"
-          value={
-            soc === null ? "— %" : `${Math.round(soc)} %`
-          }
-          sub={
-            batteryCharge > 1
-              ? `chg ${fmtW(batteryCharge)}`
-              : batteryDischarge > 1
-                ? `dch ${fmtW(batteryDischarge)}`
-                : "idle"
-          }
-          color={
-            soc === null
-              ? "#a1a1aa"
-              : soc < 20
-                ? "#ef4444"
-                : soc > 80
-                  ? "#10b981"
-                  : "#facc15"
-          }
-        />
+            icon="battery"
+            r={56}
+            dim={batteryCharge < 1 && batteryDischarge < 1}
+          />
+        </svg>
 
         {/* Légende */}
-        <g transform="translate(20, 440)">
-          <line
-            x1="0"
-            y1="0"
-            x2="40"
-            y2="0"
-            stroke="#10b981"
-            strokeWidth="3"
-            className="flow-active"
-          />
-          <text x="48" y="4" fill="#a1a1aa" fontSize="11">
+        <div className="flex flex-wrap items-center gap-6 text-xs text-zinc-400 pt-3 border-t border-zinc-900 mt-2">
+          <span className="inline-flex items-center gap-2">
+            <svg width="48" height="10" viewBox="0 0 48 10">
+              <line
+                x1="0"
+                y1="5"
+                x2="42"
+                y2="5"
+                stroke="#22c55e"
+                strokeWidth="3"
+                strokeDasharray="6 4"
+                className="flow-line"
+              />
+              <path d="M40,1 L46,5 L40,9 L42,5 z" fill="#22c55e" />
+            </svg>
             flux actif
-          </text>
-          <line
-            x1="130"
-            y1="0"
-            x2="170"
-            y2="0"
-            stroke="#2a2a2a"
-            strokeWidth="2"
-          />
-          <text x="178" y="4" fill="#a1a1aa" fontSize="11">
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <svg width="48" height="10" viewBox="0 0 48 10">
+              <line
+                x1="0"
+                y1="5"
+                x2="48"
+                y2="5"
+                stroke={C.inactive}
+                strokeWidth="2"
+                strokeDasharray="6 6"
+              />
+            </svg>
             inactif
-          </text>
-          <text x="260" y="4" fill="#a1a1aa" fontSize="11">
-            épaisseur ∝ puissance
-          </text>
-        </g>
-      </svg>
+          </span>
+          <span>épaisseur ∝ puissance</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 function powerWidth(w: number): number {
-  if (w < 1) return 2;
-  // 1 W → 2 px ; 5000 W → ~12 px (logarithmique)
-  return Math.min(14, 2 + Math.log10(w) * 3);
+  if (w < 1) return 3;
+  return Math.min(8, 3 + Math.log10(w) * 1.6);
 }
 
-function FlowLine({
-  x1,
-  y1,
-  x2,
-  y2,
+function FlowPath({
+  d,
   active,
-  color,
   width,
 }: {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  d: string;
   active: boolean;
-  color: string;
   width: number;
 }) {
+  if (!active) {
+    return <path d={d} className="flow-idle" />;
+  }
   return (
-    <line
-      x1={x1}
-      y1={y1}
-      x2={x2}
-      y2={y2}
-      stroke={active ? color : "#2a2a2a"}
-      strokeWidth={active ? width : 2}
-      strokeLinecap="round"
-      className={active ? "flow-active" : "flow-idle"}
-      markerEnd={
-        active
-          ? color === "#f59e0b"
-            ? "url(#arrow-warn)"
-            : "url(#arrow)"
-          : undefined
-      }
-    />
+    <g>
+      <path d={d} className="flow-rail" />
+      <path
+        d={d}
+        stroke="#22c55e"
+        strokeWidth={width}
+        fill="none"
+        strokeLinecap="round"
+        markerEnd="url(#chev-active)"
+        className="flow-line"
+      />
+    </g>
   );
 }
 
 function Node({
   x,
   y,
-  icon,
+  color,
   label,
   value,
   sub,
-  color,
-  big,
+  icon,
+  r,
+  dim,
 }: {
   x: number;
   y: number;
-  icon: string;
+  color: string;
   label: string;
   value: string;
   sub?: string;
-  color: string;
-  big?: boolean;
+  icon: "solar" | "house" | "grid" | "battery";
+  r: number;
+  dim?: boolean;
 }) {
-  const r = big ? 60 : 50;
+  const opacity = dim ? 0.5 : 1;
   return (
-    <g transform={`translate(${x},${y})`}>
+    <g transform={`translate(${x},${y})`} style={{ opacity }}>
+      {/* Anneau extérieur diffus */}
+      <circle r={r + 10} fill={color} opacity={0.08} filter="url(#glow-strong)" />
+      {/* Halo */}
       <circle
         r={r}
-        fill="#0a0a0a"
+        fill="#0a0e1a"
         stroke={color}
-        strokeWidth="2"
+        strokeWidth={2.5}
+        filter="url(#glow-solar)"
+        className="ring-pulse"
       />
+      {/* Icône */}
+      <g transform="translate(-14, -32)" stroke={color} fill="none" strokeWidth={1.7}>
+        <NodeIcon kind={icon} />
+      </g>
       <text
         textAnchor="middle"
-        y={-r * 0.25}
-        fontSize={big ? 36 : 30}
-      >
-        {icon}
-      </text>
-      <text
-        textAnchor="middle"
-        y={r * 0.05}
+        y={6}
         fill="#a1a1aa"
         fontSize="10"
-        style={{ textTransform: "uppercase", letterSpacing: 1 }}
+        style={{ textTransform: "uppercase", letterSpacing: 1.5 }}
       >
         {label}
       </text>
       <text
         textAnchor="middle"
-        y={r * 0.35}
+        y={28}
         fill={color}
-        fontSize={big ? 18 : 16}
-        fontWeight="700"
+        fontSize={r > 58 ? 22 : 19}
+        fontWeight={700}
         style={{ fontVariantNumeric: "tabular-nums" }}
       >
         {value}
       </text>
       {sub && (
-        <text
-          textAnchor="middle"
-          y={r * 0.55}
-          fill="#71717a"
-          fontSize="10"
-        >
+        <text textAnchor="middle" y={46} fill="#71717a" fontSize="10">
           {sub}
         </text>
       )}
     </g>
+  );
+}
+
+function NodeIcon({ kind }: { kind: "solar" | "house" | "grid" | "battery" }) {
+  switch (kind) {
+    case "solar":
+      return (
+        <g>
+          <rect x="4" y="6" width="20" height="14" rx="1.5" />
+          <path d="M8 6v14M14 6v14M20 6v14M4 13h20" />
+          <path
+            d="M14 0v4M14 22v4M0 14h4M24 14h4M5 5l3 3M20 20l3 3M5 23l3-3M20 8l3-3"
+            strokeLinecap="round"
+          />
+        </g>
+      );
+    case "house":
+      return (
+        <g>
+          <path d="M3 14 14 4l11 10" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M6 12v12h16V12" strokeLinejoin="round" />
+        </g>
+      );
+    case "grid":
+      return (
+        <g>
+          <path d="M14 4v22M9 26l5-5 5 5M10 14h8M11 9h6" strokeLinecap="round" />
+        </g>
+      );
+    case "battery":
+      return (
+        <g>
+          <rect x="6" y="9" width="18" height="12" rx="2" />
+          <path d="M25 12v6M11 12v6M15 12v6M19 12v6" strokeLinecap="round" />
+        </g>
+      );
+  }
+}
+
+function Kpi({
+  label,
+  value,
+  status,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: string;
+  status: string;
+  tone: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div
+      className="rounded-2xl border p-4 flex items-center gap-4"
+      style={{
+        backgroundColor: `${tone}10`,
+        borderColor: `${tone}30`,
+      }}
+    >
+      <div
+        className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+        style={{
+          backgroundColor: `${tone}1A`,
+          color: tone,
+          boxShadow: `0 0 18px ${tone}30`,
+        }}
+      >
+        <div className="w-6 h-6">{icon}</div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-400 truncate">
+          {label}
+        </div>
+        <div
+          className="text-2xl font-semibold leading-tight tabular-nums"
+          style={{ color: tone }}
+        >
+          {value}
+        </div>
+        <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ backgroundColor: tone }}
+          />
+          {status}
+        </div>
+      </div>
+    </div>
   );
 }

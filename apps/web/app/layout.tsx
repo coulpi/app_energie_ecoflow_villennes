@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import Link from "next/link";
+import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
   title: "EcoFlow Villennes",
@@ -14,21 +14,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" className="dark">
-      <body className="min-h-screen">
-        <header className="border-b border-zinc-800 px-6 py-3 flex items-center gap-6">
-          <Link href="/" className="font-semibold">⚡ EcoFlow Villennes</Link>
-          <nav className="flex gap-4 text-sm text-zinc-400">
-            <Link href="/" className="hover:text-zinc-100">Tableau de bord</Link>
-            <Link href="/flow" className="hover:text-zinc-100">Flux</Link>
-            <Link href="/devices" className="hover:text-zinc-100">Équipements</Link>
-            <Link href="/history" className="hover:text-zinc-100">Historique</Link>
-            <Link href="/rules" className="hover:text-zinc-100">Règles</Link>
-            <Link href="/tariffs" className="hover:text-zinc-100">Tarifs</Link>
-            <Link href="/control" className="hover:text-zinc-100">Pilotage</Link>
-            <Link href="/kiosk" className="hover:text-zinc-100">Kiosk</Link>
-          </nav>
-        </header>
-        <main className="p-6">{children}</main>
+      <body className="min-h-screen bg-[#0a0e1a] text-zinc-100 antialiased">
+        <div className="flex">
+          <Sidebar />
+          <main className="flex-1 min-h-screen p-6 sm:p-8">{children}</main>
+        </div>
       </body>
     </html>
   );
