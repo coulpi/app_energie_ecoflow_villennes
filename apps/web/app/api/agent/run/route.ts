@@ -9,7 +9,7 @@ export async function POST() {
     const r = await fetch(`${WORKER}/run`, {
       method: "POST",
       cache: "no-store",
-      signal: AbortSignal.timeout(610_000),
+      signal: AbortSignal.timeout(1810_000),
     });
     const json = await r.json();
     return NextResponse.json(json, { status: r.status });

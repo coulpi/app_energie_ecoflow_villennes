@@ -151,41 +151,43 @@ async function buildContext() {
     log.warn("agent: weather fetch failed", { error: (e as Error).message });
   }
 
-  return {
+  // Compaction agressive : on omet les champs vides pour réduire le prompt.
+  const ctx: Record<string, unknown> = {
     now: new Date().toISOString(),
-    location: {
-      lat: env.HOME_LAT,
-      lon: env.HOME_LON,
-      tz: env.HOME_TZ,
-    },
     snapshot,
-    consumption_pattern: compactPattern,
-    weather_forecast: forecast.map((p) => ({
-      ts: p.ts,
-      tempC: p.temperatureC,
-      cloudPct: p.cloudCoverPct,
-      irradianceWm2: p.shortwaveRadWm2,
-      precipMm: p.precipMm,
-    })),
-    tariffs: tariffs.map((t) => ({
-      name: t.name,
-      period: t.period,
-      start: minToHHMM(t.startMinute),
-      end: minToHHMM(t.endMinute),
-      daysOfWeek: t.daysOfWeek,
-      pricePerKwh: t.pricePerKwh,
-    })),
-    control_state: controlState,
-    loads: loads.map((l) => ({
-      name: l.name,
-      expectedPowerW: l.expectedPowerW,
-      schedule: l.detectedSchedule,
-    })),
     constraints: {
       batteryCriticalSoc: env.BATTERY_CRITICAL_SOC,
       batteryCapacityWh: 2016,
     },
   };
+  if (compactPattern.length > 0) ctx.consumption_pattern = compactPattern;
+  if (forecast.length > 0) {
+    ctx.weather_forecast = forecast.map((p) => ({
+      t: p.ts,
+      irr: p.shortwaveRadWm2,
+      cloud: p.cloudCoverPct,
+    }));
+  }
+  if (tariffs.length > 0) {
+    ctx.tariffs = tariffs.map((t) => ({
+      name: t.name,
+      period: t.period,
+      start: minToHHMM(t.startMinute),
+      end: minToHHMM(t.endMinute),
+      pricePerKwh: t.pricePerKwh,
+    }));
+  }
+  if (controlState) ctx.control_state = controlState;
+  const loadsWithSchedule = loads.filter((l) => l.detectedSchedule);
+  if (loads.length > 0) {
+    ctx.loads = loads.map((l) => ({
+      name: l.name,
+      expectedW: l.expectedPowerW,
+      schedule: l.detectedSchedule,
+    }));
+    void loadsWithSchedule; // référence pour grep futur
+  }
+  return ctx;
 }
 
 function minToHHMM(m: number): string {
@@ -307,7 +309,7 @@ export async function runAgent(
       ],
       format: "json",
       temperature: 0.1,
-      signal: AbortSignal.timeout(600_000), // 10 min : laisse le temps à un 31B de charger en mémoire la 1re fois
+      signal: AbortSignal.timeout(1800_000), // 30 min — un 31B sur GPU moyen avec prompt riche peut prendre 10-20 min
     });
 
     const proposal = tryParseJson(response);
