@@ -67,6 +67,28 @@ const items: { href: string; icon: React.ReactNode; label: string }[] = [
       </svg>
     ),
   },
+  {
+    href: "/loads",
+    label: "Charges récurrentes",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <rect x="3" y="11" width="4" height="9" rx="1" />
+        <rect x="10" y="6" width="4" height="14" rx="1" />
+        <rect x="17" y="14" width="4" height="6" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    href: "/agent",
+    label: "Agent IA",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <path d="M12 3a4 4 0 0 0-4 4v1H7a3 3 0 0 0 0 6h1v1a4 4 0 0 0 8 0v-1h1a3 3 0 0 0 0-6h-1V7a4 4 0 0 0-4-4Z" strokeLinejoin="round" />
+        <circle cx="10" cy="11" r="0.6" fill="currentColor" />
+        <circle cx="14" cy="11" r="0.6" fill="currentColor" />
+      </svg>
+    ),
+  },
 ];
 
 export default function Sidebar() {

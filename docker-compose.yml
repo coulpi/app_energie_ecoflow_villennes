@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-EcoFlow Villennes}
+      WORKER_INTERNAL_URL: http://worker:3100
       TZ: Europe/Paris
     depends_on:
       postgres:
@@ -51,6 +52,14 @@ services:
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
       RAW_RETENTION_DAYS: ${RAW_RETENTION_DAYS:-30}
       HOURLY_RETENTION_DAYS: ${HOURLY_RETENTION_DAYS:-365}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b-instruct}
+      AGENT_INTERVAL_MINUTES: ${AGENT_INTERVAL_MINUTES:-60}
+      AGENT_ENABLED: ${AGENT_ENABLED:-true}
+      BATTERY_CRITICAL_SOC: ${BATTERY_CRITICAL_SOC:-5}
+      HOME_LAT: ${HOME_LAT:-48.9436}
+      HOME_LON: ${HOME_LON:-1.993}
+      HOME_TZ: ${HOME_TZ:-Europe/Paris}
       TZ: Europe/Paris
     depends_on:
       postgres:

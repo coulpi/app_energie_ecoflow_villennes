@@ -133,6 +133,60 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 }
 
+// Profil d'appareil consommateur récurrent (piscine, PAC, voiture, jacuzzi…).
+// L'utilisateur saisit la puissance moyenne attendue ; le système détecte
+// automatiquement les fenêtres horaires d'activation et les enregistre.
+model LoadProfile {
+  id              String   @id @default(cuid())
+  name            String
+  expectedPowerW  Int      // puissance moyenne typique configurée
+  toleranceW      Int      @default(150)
+  minDurationMin  Int      @default(15)
+  enabled         Boolean  @default(true)
+  detectedSchedule Json?   // {byDow: [...], confidence}
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  events LoadEvent[]
+}
+
+// Cycle d'activation détecté (ou consommation orpheline non matchée).
+model LoadEvent {
+  id          BigInt   @id @default(autoincrement())
+  profileId   String?
+  startTs     DateTime @db.Timestamptz(3)
+  endTs       DateTime @db.Timestamptz(3)
+  avgPowerW   Float
+  energyWh    Float?
+  durationMin Int
+  matched     Boolean  @default(false)
+  notes       String?
+
+  profile LoadProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  @@index([startTs(sort: Desc)])
+  @@index([profileId, startTs(sort: Desc)])
+}
+
+// Trace de chaque exécution de l'agent LLM (Ollama).
+model AgentRun {
+  id           BigInt   @id @default(autoincrement())
+  ts           DateTime @default(now()) @db.Timestamptz(3)
+  trigger      String   // "schedule" | "manual"
+  model        String?
+  context      Json
+  prompt       String   @db.Text
+  response     String?  @db.Text
+  proposal     Json?
+  applied      Boolean  @default(false)
+  appliedJson  Json?
+  error        String?
+  durationMs   Int?
+
+  @@index([ts(sort: Desc)])
+}
+
 // Fenêtres tarifaires (heures creuses / pleines / pointe).
 // Exprimées en heure locale (Europe/Paris). Les jours sont un bitmap
 // (1=Lun ... 7=Dim) ou null pour tous les jours.

@@ -6,6 +6,10 @@ import { startEcoFlowMqtt, startEcoFlowPoller } from "./pollers/ecoflow.js";
 import { startRollupScheduler } from "./jobs/rollup.js";
 import { startRulesEngine } from "./rules/engine.js";
 import { startFollowLoadLoop } from "./rules/follow-load.js";
+import { startAgentScheduler } from "./agent/optimizer.js";
+import { startSafetyLoop } from "./agent/safety.js";
+import { startLoadDetection } from "./agent/loads.js";
+import { startHttpServer } from "./server.js";
 
 async function main() {
   log.info("worker starting", {
@@ -27,7 +31,11 @@ async function main() {
 
   startRulesEngine(env.POLL_INTERVAL_SECONDS);
   startFollowLoadLoop(env.POLL_INTERVAL_SECONDS);
+  startSafetyLoop(env.POLL_INTERVAL_SECONDS);
   startRollupScheduler();
+  startLoadDetection();
+  startAgentScheduler();
+  startHttpServer();
 
   log.info("worker ready");
 }
