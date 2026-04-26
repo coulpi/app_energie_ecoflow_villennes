@@ -112,6 +112,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const measuredConsumptionW = cons?.powerW ?? null;
   let consumptionW: number | null = null; // sera calculé par bilan
   let batteryPowerW: number | null = bat?.powerW ?? null;
+  // Seuil de détection : la consommation interne du BMS / inverter EcoFlow
+  // (5-30 W typiquement) ne doit pas être interprétée comme une décharge
+  // utile. On considère la batterie idle en deçà.
+  if (batteryPowerW !== null && Math.abs(batteryPowerW) < 30) {
+    batteryPowerW = 0;
+  }
 
   // 1) Bilan énergétique direct : si on a la conso mesurée + prod + grid,
   //    bat = cons - prod - grid (le plus précis possible).
