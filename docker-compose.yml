@@ -14,8 +14,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    ports:
-      - "5432:5432"
+    # Port non exposé sur l'hôte par défaut (uniquement réseau Docker
+    # interne). Pour un accès externe (psql, prisma studio depuis l'hôte)
+    # ajouter manuellement `ports: ["5432:5432"]` ou utiliser docker exec.
 
   web:
     build:
