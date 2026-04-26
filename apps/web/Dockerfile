@@ -1,4 +1,5 @@
 FROM node:20-alpine AS base
+RUN apk add --no-cache openssl
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 WORKDIR /repo
 
@@ -17,6 +18,7 @@ RUN pnpm prisma:generate
 RUN pnpm --filter @app/web build
 
 FROM node:20-alpine AS runtime
+RUN apk add --no-cache openssl
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 WORKDIR /repo
 ENV NODE_ENV=production

@@ -8,6 +8,7 @@
     "allowJs": true,
     "noEmit": true,
     "plugins": [{ "name": "next" }],
+    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
       "@app/shared": ["../../packages/shared/src/index.ts"],

@@ -1,5 +1,5 @@
-export * from "./types.js";
-export * as tuya from "./tuya.js";
-export * as ecoflow from "./ecoflow.js";
-export * from "./rules-dsl.js";
-export * from "./time.js";
+export * from "./types";
+export * as tuya from "./tuya";
+export * as ecoflow from "./ecoflow";
+export * from "./rules-dsl";
+export * from "./time";
