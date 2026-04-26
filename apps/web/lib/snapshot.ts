@@ -50,26 +50,18 @@ async function estimateBatteryFromSocDrift(): Promise<number | null> {
   }
   if (ticks.length < 2) return 0; // SoC stable depuis 1h → batterie idle
 
-  // Pour stabiliser, on moyenne la pente sur les N derniers intervalles
-  // entre ticks consécutifs (max 6 = ~30 min de données généralement).
-  const N = Math.min(6, ticks.length - 1);
-  let sumWattsSigned = 0;
-  let count = 0;
-  for (let i = ticks.length - 1; i > ticks.length - 1 - N; i--) {
-    const cur = ticks[i]!;
-    const prev = ticks[i - 1]!;
-    const minutesElapsed = (cur.ts.getTime() - prev.ts.getTime()) / 60_000;
-    if (minutesElapsed < 0.5) continue;
-    const deltaSoc = cur.soc - prev.soc;
-    const deltaWh = (deltaSoc / 100) * BATTERY_CAPACITY_WH;
-    const watts = (deltaWh * 60) / minutesElapsed;
-    sumWattsSigned += watts;
-    count += 1;
-  }
-  if (count === 0) return null;
-  const avgWatts = sumWattsSigned / count;
-
+  // Stratégie robuste pour signal entier (résolution 1 % du SoC) :
+  // on calcule directement le ΔSoC entre le 1er et le dernier tick de la
+  // fenêtre, divisé par le temps total. Cela évite que la moyenne par
+  // intervalle ne sur-pondère les ticks rapides.
+  const first = ticks[0]!;
   const last = ticks[ticks.length - 1]!;
+  const minutesTotal = (last.ts.getTime() - first.ts.getTime()) / 60_000;
+  if (minutesTotal < 1) return null;
+  const deltaSocTotal = last.soc - first.soc;
+  const deltaWhTotal = (deltaSocTotal / 100) * BATTERY_CAPACITY_WH;
+  const avgWatts = (deltaWhTotal * 60) / minutesTotal;
+
   const sinceLastTick = (now - last.ts.getTime()) / 60_000;
   if (sinceLastTick > 15) return -avgWatts * 0.3;
   // SoC monte → charge (powerW négatif). SoC descend → décharge (powerW positif).
@@ -147,9 +139,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     if (estimated !== null) batteryPowerW = estimated;
   }
 
-  // Si une mesure (prod, conso, ou grid) manque, on dérive depuis le bilan.
+  // Bilan énergétique : la consommation maison est la somme prod + grid + bat
+  // (entrées dans la maison) — quand les 3 sont disponibles, on l'utilise comme
+  // source unique pour la conso, ignorant la mesure directe du Shelly canal 0
+  // qui peut ne représenter qu'un sous-circuit.
   const batForBalance = batteryPowerW ?? 0;
-  if (consumptionW === null && productionW !== null && gridW !== null) {
+  if (productionW !== null && gridW !== null) {
     consumptionW = productionW + gridW + batForBalance;
   }
   if (productionW === null && consumptionW !== null && gridW !== null) {
