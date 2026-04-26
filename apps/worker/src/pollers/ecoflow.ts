@@ -143,3 +143,69 @@ export async function startEcoFlowMqtt(): Promise<void> {
     devices: batteries.map((b) => b.externalId),
   });
 }
+
+/**
+ * Poll REST de getQuotaAll pour chaque batterie : les MQTT topics
+ * EcoFlow ne diffusent fiablement que `bmsMaster.*`. La puissance AC
+ * réelle (entrée chargeur + sortie onduleur) est dans `inv.*` / `pd.*`.
+ */
+export async function pollEcoFlowOnce(): Promise<void> {
+  const batteries = await prisma.device.findMany({
+    where: { enabled: true, type: "ECOFLOW_BATTERY" },
+  });
+  if (batteries.length === 0) return;
+
+  const client = getEcoFlowClient();
+  await Promise.allSettled(
+    batteries.map(async (b) => {
+      try {
+        const quota = await client.getQuotaAll(b.externalId);
+        const metrics = extractEcoFlowMetrics(
+          quota as Record<string, unknown>,
+        );
+        if (
+          metrics.soc === null &&
+          metrics.inputW === null &&
+          metrics.outputW === null
+        ) {
+          return;
+        }
+        let powerW: number | null = null;
+        if (metrics.outputW !== null && metrics.outputW > 0) {
+          powerW = metrics.outputW;
+        } else if (metrics.inputW !== null && metrics.inputW > 0) {
+          powerW = -metrics.inputW;
+        } else if (metrics.outputW !== null || metrics.inputW !== null) {
+          powerW = 0;
+        }
+        await prisma.reading.create({
+          data: {
+            deviceId: b.id,
+            ts: new Date(),
+            powerW,
+            soc: metrics.soc,
+            raw: quota as object,
+          },
+        });
+      } catch (e) {
+        log.warn("ecoflow poll failed", {
+          sn: b.externalId,
+          error: (e as Error).message,
+        });
+      }
+    }),
+  );
+}
+
+export function startEcoFlowPoller(intervalSeconds: number) {
+  log.info("starting ecoflow REST poller", { intervalSeconds });
+  const tick = async () => {
+    try {
+      await pollEcoFlowOnce();
+    } catch (e) {
+      log.error("ecoflow poll tick error", { error: (e as Error).message });
+    }
+  };
+  void tick();
+  return setInterval(tick, intervalSeconds * 1000);
+}

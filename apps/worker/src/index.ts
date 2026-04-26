@@ -2,7 +2,7 @@ import { env } from "./env.js";
 import { log } from "./log.js";
 import { startTuyaPoller } from "./pollers/tuya.js";
 import { startShellyPoller } from "./pollers/shelly.js";
-import { startEcoFlowMqtt } from "./pollers/ecoflow.js";
+import { startEcoFlowMqtt, startEcoFlowPoller } from "./pollers/ecoflow.js";
 import { startRollupScheduler } from "./jobs/rollup.js";
 import { startRulesEngine } from "./rules/engine.js";
 import { startFollowLoadLoop } from "./rules/follow-load.js";
@@ -20,6 +20,10 @@ async function main() {
   } catch (e) {
     log.warn("ecoflow mqtt setup failed", { error: (e as Error).message });
   }
+
+  // EcoFlow REST poll : l'API gratuite refuse souvent getQuotaAll sur
+  // Delta Max (code 1006). On garde le tick mais sans bloquer si refusé.
+  startEcoFlowPoller(env.POLL_INTERVAL_SECONDS);
 
   startRulesEngine(env.POLL_INTERVAL_SECONDS);
   startFollowLoadLoop(env.POLL_INTERVAL_SECONDS);

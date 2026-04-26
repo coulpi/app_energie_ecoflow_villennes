@@ -59,6 +59,18 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         ? productionW - consumptionW
         : null;
 
+  // Puissance batterie : préférer la valeur du BMS, sinon dériver depuis
+  // la prise AC. Le BMS Delta Max remonte souvent 0 W via MQTT alors que
+  // la batterie charge réellement — la prise AC en amont, elle, mesure la
+  // consommation réelle du chargeur (signe inversé : prise consomme >0
+  // = batterie charge donc powerW négatif côté batterie).
+  let batteryPowerW: number | null = bat?.powerW ?? null;
+  if ((batteryPowerW === null || batteryPowerW === 0) && sw) {
+    if (sw.switchOn === true && sw.powerW !== null && sw.powerW > 5) {
+      batteryPowerW = -sw.powerW;
+    }
+  }
+
   return {
     ts: new Date().toISOString(),
     productionW,
@@ -66,7 +78,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     gridW,
     surplusW,
     batterySoc: bat?.soc ?? null,
-    batteryPowerW: bat?.powerW ?? null,
+    batteryPowerW,
     switchOn: sw?.switchOn ?? null,
     controlMode: ctrl?.mode ?? "RULES",
     tariffPeriod: null,
