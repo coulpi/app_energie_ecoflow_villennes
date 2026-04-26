@@ -40,15 +40,19 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   ]);
 
   let productionW = prod?.powerW ?? null;
-  const gridW = grid?.powerW ?? null;
+  let gridW = grid?.powerW ?? null;
   let consumptionW = cons?.powerW ?? null;
   // Dérivation : selon les capteurs disponibles, on complète une mesure
-  // manquante à partir des deux autres (production + net_grid = conso).
+  // manquante à partir des deux autres.
+  //   net_grid = consumption - production  (+ = import, - = export)
   if (consumptionW === null && productionW !== null && gridW !== null) {
     consumptionW = productionW + gridW;
   }
   if (productionW === null && consumptionW !== null && gridW !== null) {
     productionW = Math.max(0, consumptionW - gridW);
+  }
+  if (gridW === null && productionW !== null && consumptionW !== null) {
+    gridW = consumptionW - productionW;
   }
   // Surplus : ce qui sort vers le réseau si grid signé < 0, sinon
   // production - consommation (équivalent).

@@ -46,13 +46,16 @@ export async function buildSnapshot(now = new Date()): Promise<MetricSnapshot> {
   const sw = await lastReading("BATTERY_AC_SWITCH");
 
   let production_W = prod?.powerW ?? null;
-  const grid_W = grid?.powerW ?? null;
+  let grid_W = grid?.powerW ?? null;
   let consumption_W = cons?.powerW ?? null;
   if (consumption_W === null && production_W !== null && grid_W !== null) {
     consumption_W = production_W + grid_W;
   }
   if (production_W === null && consumption_W !== null && grid_W !== null) {
     production_W = Math.max(0, consumption_W - grid_W);
+  }
+  if (grid_W === null && production_W !== null && consumption_W !== null) {
+    grid_W = consumption_W - production_W;
   }
   const surplus_W =
     grid_W !== null

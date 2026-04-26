@@ -244,12 +244,14 @@ export interface TuyaCommand {
 /**
  * Le PJ2101A encode `phase_a` en base64 d'un buffer binaire :
  *   bytes 0-1 : voltage (×10, big-endian)
- *   bytes 2-4 : current mA (24-bit, big-endian)
- *   bytes 5-7 : power W (24-bit, big-endian, peut être signé via bit haut)
- * Source : nombreux retours d'expérience publics sur ce modèle.
+ *   bytes 2-4 : current mA (24-bit, big-endian) — LSB du courant = direction :
+ *               0 = import (consommation), 1 = export (surproduction).
+ *               Le courant réel = (raw & 0xFFFFFE) en mA.
+ *   bytes 5-7 : power W (24-bit, big-endian, NON signé — direction donnée
+ *               par le LSB du courant).
  *
  * Si la valeur arrive déjà comme objet {voltage, electriccurrent, power}, on
- * la lit directement.
+ * applique la même règle sur electriccurrent.
  */
 function decodePhaseA(value: unknown): {
   voltageV: number | null;
@@ -258,13 +260,19 @@ function decodePhaseA(value: unknown): {
 } | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const o = value as Record<string, unknown>;
+    const cRaw = typeof o.electriccurrent === "number" ? o.electriccurrent : null;
+    const direction = cRaw !== null ? (cRaw & 1) : 0;
+    const currentMa = cRaw !== null ? cRaw & ~1 : null;
+    const powerAbs = typeof o.power === "number" ? o.power : null;
     return {
       voltageV: typeof o.voltage === "number" ? o.voltage / 10 : null,
-      currentA:
-        typeof o.electriccurrent === "number"
-          ? o.electriccurrent / 1000
+      currentA: currentMa !== null ? currentMa / 1000 : null,
+      powerW:
+        powerAbs !== null
+          ? direction === 1
+            ? -powerAbs
+            : powerAbs
           : null,
-      powerW: typeof o.power === "number" ? o.power : null,
     };
   }
   if (typeof value !== "string") return null;
@@ -272,11 +280,16 @@ function decodePhaseA(value: unknown): {
     const buf = Buffer.from(value, "base64");
     if (buf.length < 8) return null;
     const voltage = buf.readUInt16BE(0) / 10;
-    const current = ((buf[2]! << 16) | (buf[3]! << 8) | buf[4]!) / 1000;
-    let power = (buf[5]! << 16) | (buf[6]! << 8) | buf[7]!;
-    // Bit de signe sur 24 bits.
-    if (power & 0x800000) power = power - 0x1000000;
-    return { voltageV: voltage, currentA: current, powerW: power };
+    const currentRaw = (buf[2]! << 16) | (buf[3]! << 8) | buf[4]!;
+    const direction = currentRaw & 1;
+    const currentMa = currentRaw & ~1;
+    const powerAbs = (buf[5]! << 16) | (buf[6]! << 8) | buf[7]!;
+    const power = direction === 1 ? -powerAbs : powerAbs;
+    return {
+      voltageV: voltage,
+      currentA: currentMa / 1000,
+      powerW: power,
+    };
   } catch {
     return null;
   }
