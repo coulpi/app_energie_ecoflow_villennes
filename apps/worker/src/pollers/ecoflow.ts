@@ -1,9 +1,10 @@
-import { ecoflow as ecoflowNs } from "@app/shared";
+import { ecoflow as ecoflowNs, ecoflowPrivate as ecoflowPrivateNs } from "@app/shared";
 import { prisma } from "../db.js";
 import { env } from "../env.js";
 import { log } from "../log.js";
 
 const { EcoFlowClient, connectEcoFlowMqtt } = ecoflowNs;
+const { EcoFlowPrivateClient, connectEcoFlowPrivateMqtt } = ecoflowPrivateNs;
 
 let restClient: InstanceType<typeof EcoFlowClient> | null = null;
 
@@ -54,27 +55,53 @@ export function extractEcoFlowMetrics(payload: Record<string, unknown>): {
   const num = (v: unknown): number | null =>
     typeof v === "number" && Number.isFinite(v) ? v : null;
 
+  // SoC : préfère f32ShowSoc (float) sinon entier.
   const soc = num(
-    get("bmsMaster.soc", "soc", "f32ShowSoc", "bmsBattSoc", "pd.soc"),
-  );
-  const inputW = num(
     get(
-      "bmsMaster.inputWatts",
-      "inputWatts",
-      "wattsInputSum",
-      "pd.wattsInputSum",
+      "bms_bmsStatus.f32ShowSoc",
+      "f32ShowSoc",
+      "pd.soc",
+      "bmsMaster.soc",
+      "soc",
+      "bmsBattSoc",
+    ),
+  );
+
+  // Puissance AC d'abord (inv.* / pd.*) — précision optimale.
+  let inputW = num(
+    get(
       "inv.inputWatts",
+      "pd.wattsInputSum",
+      "wattsInputSum",
+      "inputWatts",
+      "bmsMaster.inputWatts",
     ),
   );
-  const outputW = num(
+  let outputW = num(
     get(
-      "bmsMaster.outputWatts",
-      "outputWatts",
-      "wattsOutputSum",
-      "pd.wattsOutputSum",
       "inv.outputWatts",
+      "pd.wattsOutputSum",
+      "wattsOutputSum",
+      "outputWatts",
+      "bmsMaster.outputWatts",
     ),
   );
+
+  // Si pas de mesure AC dispo, on calcule la puissance DC depuis le BMS :
+  //   P_DC = volt_V × amp_A = (vol_mV / 1000) × (amp_mA / 1000)
+  // amp positif = charge ; amp négatif = décharge.
+  if ((inputW === null || inputW === 0) && (outputW === null || outputW === 0)) {
+    const ampMa = num(get("bmsMaster.amp", "bms_bmsStatus.amp"));
+    const volMv = num(get("bmsMaster.vol", "bms_bmsStatus.vol"));
+    if (ampMa !== null && volMv !== null && Math.abs(ampMa) > 50) {
+      const dcWatts = (volMv * ampMa) / 1_000_000;
+      if (dcWatts > 0) {
+        inputW = dcWatts;
+      } else {
+        outputW = -dcWatts;
+      }
+    }
+  }
 
   return { soc, inputW, outputW };
 }
@@ -87,6 +114,74 @@ export async function startEcoFlowMqtt(): Promise<void> {
     log.info("no ecoflow battery configured, skipping mqtt");
     return;
   }
+
+  // Si email/password sont fournis, on utilise l'API privée (mobile)
+  // qui expose tous les quotas (inv.*, pd.*, f32ShowSoc).
+  if (env.ECOFLOW_EMAIL && env.ECOFLOW_PASSWORD) {
+    try {
+      const priv = new EcoFlowPrivateClient({
+        email: env.ECOFLOW_EMAIL,
+        password: env.ECOFLOW_PASSWORD,
+        apiBase: env.ECOFLOW_API_BASE,
+      });
+      const cert = await priv.getMqttCertification();
+      connectEcoFlowPrivateMqtt({
+        cert,
+        serialNumbers: batteries.map((b) => b.externalId),
+        onConnect: () =>
+          log.info("ecoflow private mqtt subscribed", {
+            devices: batteries.map((b) => b.externalId),
+          }),
+        onMessage: async (sn, payload) => {
+          try {
+            const device = batteries.find((b) => b.externalId === sn);
+            if (!device) return;
+            const metrics = extractEcoFlowMetrics(
+              payload as Record<string, unknown>,
+            );
+            if (
+              metrics.soc === null &&
+              metrics.inputW === null &&
+              metrics.outputW === null
+            ) {
+              return;
+            }
+            let powerW: number | null = null;
+            if (metrics.outputW !== null && metrics.outputW > 0) {
+              powerW = metrics.outputW;
+            } else if (metrics.inputW !== null && metrics.inputW > 0) {
+              powerW = -metrics.inputW;
+            } else if (metrics.outputW !== null || metrics.inputW !== null) {
+              powerW = 0;
+            }
+            await prisma.reading.create({
+              data: {
+                deviceId: device.id,
+                ts: new Date(),
+                powerW,
+                soc: metrics.soc,
+                raw: payload as object,
+              },
+            });
+          } catch (e) {
+            log.warn("ecoflow private mqtt msg failed", {
+              sn,
+              error: (e as Error).message,
+            });
+          }
+        },
+        onError: (e) =>
+          log.warn("ecoflow private mqtt error", { error: e.message }),
+      });
+      return;
+    } catch (e) {
+      log.warn("ecoflow private mqtt setup failed, falling back to developer", {
+        error: (e as Error).message,
+      });
+    }
+  }
+
+  // Fallback : Developer API (limité aux bmsMaster.* sur Delta Max).
   const client = getEcoFlowClient();
   const cert = await client.getMqttCertification();
 

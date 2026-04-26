@@ -109,10 +109,28 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
 
   let productionW = prod?.powerW ?? null;
   let gridW = grid?.powerW ?? null;
-  let consumptionW = cons?.powerW ?? null;
+  const measuredConsumptionW = cons?.powerW ?? null;
+  let consumptionW: number | null = null; // sera calculé par bilan
   let batteryPowerW: number | null = bat?.powerW ?? null;
 
-  // 1) Source la plus fiable : prise AC quand elle est ON (batterie en charge).
+  // 1) Bilan énergétique direct : si on a la conso mesurée + prod + grid,
+  //    bat = cons - prod - grid (le plus précis possible).
+  if (
+    (batteryPowerW === null || batteryPowerW === 0) &&
+    measuredConsumptionW !== null &&
+    productionW !== null &&
+    gridW !== null
+  ) {
+    const balanceBat = measuredConsumptionW - productionW - gridW;
+    // Garde-fou : Delta Max max 2200 W, et bruit < 30 W = idle.
+    if (Math.abs(balanceBat) > 30) {
+      batteryPowerW = Math.max(-2200, Math.min(2200, balanceBat));
+    } else {
+      batteryPowerW = 0;
+    }
+  }
+
+  // 2) Prise AC : si ON et conso > 5 W → charge.
   if ((batteryPowerW === null || batteryPowerW === 0) && sw) {
     if (sw.switchOn === true && sw.powerW !== null && sw.powerW > 5) {
       batteryPowerW = -sw.powerW;
@@ -131,21 +149,19 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   // énergétique donne la batterie de manière exacte :
   //   bat_signed = consumption - production - grid_signed
   // Cette estimation est plus précise que la dérive SoC (résolution 1%).
-  // 2) Estimation par dérive du SoC (moyenne sur derniers ticks). Plus
-  //    fiable que le bilan énergétique tant que les capteurs grid/conso
-  //    ne sont pas tous concordants entre eux.
-  if (batteryPowerW === null || batteryPowerW === 0) {
+  // 3) Dernier recours : dérive du SoC (1% de résolution → bruyant).
+  if (batteryPowerW === null) {
     const estimated = await estimateBatteryFromSocDrift();
     if (estimated !== null) batteryPowerW = estimated;
   }
 
-  // Bilan énergétique : la consommation maison est la somme prod + grid + bat
-  // (entrées dans la maison) — quand les 3 sont disponibles, on l'utilise comme
-  // source unique pour la conso, ignorant la mesure directe du Shelly canal 0
-  // qui peut ne représenter qu'un sous-circuit.
+  // Conso = somme prod + grid + bat (bilan énergétique forcé pour cohérence
+  // visuelle, indépendamment du Shelly direct qui peut être sur sous-circuit).
   const batForBalance = batteryPowerW ?? 0;
   if (productionW !== null && gridW !== null) {
     consumptionW = productionW + gridW + batForBalance;
+  } else if (measuredConsumptionW !== null) {
+    consumptionW = measuredConsumptionW;
   }
   if (productionW === null && consumptionW !== null && gridW !== null) {
     productionW = Math.max(0, consumptionW - gridW - batForBalance);

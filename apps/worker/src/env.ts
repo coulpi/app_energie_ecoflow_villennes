@@ -5,6 +5,8 @@ const Schema = z.object({
   ECOFLOW_ACCESS_KEY: z.string().min(1).optional(),
   ECOFLOW_SECRET_KEY: z.string().min(1).optional(),
   ECOFLOW_API_BASE: z.string().url().default("https://api-e.ecoflow.com"),
+  ECOFLOW_EMAIL: z.string().email().optional(),
+  ECOFLOW_PASSWORD: z.string().min(1).optional(),
   TUYA_CLIENT_ID: z.string().min(1).optional(),
   TUYA_CLIENT_SECRET: z.string().min(1).optional(),
   TUYA_API_BASE: z.string().url().default("https://openapi.tuyaeu.com"),
