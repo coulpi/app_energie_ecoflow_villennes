@@ -295,9 +295,9 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
             color={C.battery}
             label={
               batteryCharge > 1
-                ? "Batterie · charge"
+                ? "Batterie · charge ~"
                 : batteryDischarge > 1
-                  ? "Batterie · décharge"
+                  ? "Batterie · décharge ~"
                   : "Batterie · idle"
             }
             value={

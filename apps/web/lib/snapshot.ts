@@ -50,27 +50,30 @@ async function estimateBatteryFromSocDrift(): Promise<number | null> {
   }
   if (ticks.length < 2) return 0; // SoC stable depuis 1h → batterie idle
 
-  // On utilise les 2 derniers ticks pour calculer la pente moyenne
-  // entre eux. Ça neutralise l'effet de quantification : on mesure
-  // exactement le temps qu'a pris la batterie pour perdre/gagner 1 %.
-  const last = ticks[ticks.length - 1]!;
-  const before = ticks[ticks.length - 2]!;
-  const minutesElapsed = (last.ts.getTime() - before.ts.getTime()) / 60_000;
-  if (minutesElapsed < 0.5) return null;
-  const deltaSoc = last.soc - before.soc;
-  const deltaWh = (deltaSoc / 100) * BATTERY_CAPACITY_WH;
-  const watts = (deltaWh * 60) / minutesElapsed;
-  // SoC monte → charge (powerW négatif). SoC descend → décharge (powerW positif).
-  // Lissage : si le dernier tick est très récent (< 30 s), on ne peut pas
-  // garantir que la batterie n'a pas changé de régime, donc on retourne null
-  // pour laisser le précédent tick parler.
-  const sinceLastTick = (now - last.ts.getTime()) / 60_000;
-  if (sinceLastTick > 15) {
-    // Aucune transition depuis 15 min : la batterie est probablement idle
-    // ou en régime très bas. On reste sur la dernière estimation, atténuée.
-    return watts * 0.3;
+  // Pour stabiliser, on moyenne la pente sur les N derniers intervalles
+  // entre ticks consécutifs (max 6 = ~30 min de données généralement).
+  const N = Math.min(6, ticks.length - 1);
+  let sumWattsSigned = 0;
+  let count = 0;
+  for (let i = ticks.length - 1; i > ticks.length - 1 - N; i--) {
+    const cur = ticks[i]!;
+    const prev = ticks[i - 1]!;
+    const minutesElapsed = (cur.ts.getTime() - prev.ts.getTime()) / 60_000;
+    if (minutesElapsed < 0.5) continue;
+    const deltaSoc = cur.soc - prev.soc;
+    const deltaWh = (deltaSoc / 100) * BATTERY_CAPACITY_WH;
+    const watts = (deltaWh * 60) / minutesElapsed;
+    sumWattsSigned += watts;
+    count += 1;
   }
-  return -watts;
+  if (count === 0) return null;
+  const avgWatts = sumWattsSigned / count;
+
+  const last = ticks[ticks.length - 1]!;
+  const sinceLastTick = (now - last.ts.getTime()) / 60_000;
+  if (sinceLastTick > 15) return -avgWatts * 0.3;
+  // SoC monte → charge (powerW négatif). SoC descend → décharge (powerW positif).
+  return -avgWatts;
 }
 
 export interface DashboardSnapshot {
@@ -115,30 +118,13 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   let productionW = prod?.powerW ?? null;
   let gridW = grid?.powerW ?? null;
   let consumptionW = cons?.powerW ?? null;
-  // Calcule batteryPowerW d'abord (logique plus bas), nécessaire pour
-  // une dérivation correcte de la consommation.
   let batteryPowerW: number | null = bat?.powerW ?? null;
+
+  // 1) Source la plus fiable : prise AC quand elle est ON (batterie en charge).
   if ((batteryPowerW === null || batteryPowerW === 0) && sw) {
     if (sw.switchOn === true && sw.powerW !== null && sw.powerW > 5) {
       batteryPowerW = -sw.powerW;
     }
-  }
-  if (batteryPowerW === null || batteryPowerW === 0) {
-    const estimated = await estimateBatteryFromSocDrift();
-    if (estimated !== null) batteryPowerW = estimated;
-  }
-  // Bilan énergétique global :
-  //   prod + grid_signed + bat_signed = consumption
-  //   (grid_signed : + import, - export ; bat_signed : + décharge, - charge)
-  const batForBalance = batteryPowerW ?? 0;
-  if (consumptionW === null && productionW !== null && gridW !== null) {
-    consumptionW = productionW + gridW + batForBalance;
-  }
-  if (productionW === null && consumptionW !== null && gridW !== null) {
-    productionW = Math.max(0, consumptionW - gridW - batForBalance);
-  }
-  if (gridW === null && productionW !== null && consumptionW !== null) {
-    gridW = consumptionW - productionW - batForBalance;
   }
   // Surplus : ce qui sort vers le réseau si grid signé < 0, sinon
   // production - consommation (équivalent).
@@ -149,7 +135,29 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         ? productionW - consumptionW
         : null;
 
-  // Puissance batterie déjà calculée plus haut pour le bilan.
+  // Si conso, prod et grid sont tous mesurés directement, le bilan
+  // énergétique donne la batterie de manière exacte :
+  //   bat_signed = consumption - production - grid_signed
+  // Cette estimation est plus précise que la dérive SoC (résolution 1%).
+  // 2) Estimation par dérive du SoC (moyenne sur derniers ticks). Plus
+  //    fiable que le bilan énergétique tant que les capteurs grid/conso
+  //    ne sont pas tous concordants entre eux.
+  if (batteryPowerW === null || batteryPowerW === 0) {
+    const estimated = await estimateBatteryFromSocDrift();
+    if (estimated !== null) batteryPowerW = estimated;
+  }
+
+  // Si une mesure (prod, conso, ou grid) manque, on dérive depuis le bilan.
+  const batForBalance = batteryPowerW ?? 0;
+  if (consumptionW === null && productionW !== null && gridW !== null) {
+    consumptionW = productionW + gridW + batForBalance;
+  }
+  if (productionW === null && consumptionW !== null && gridW !== null) {
+    productionW = Math.max(0, consumptionW - gridW - batForBalance);
+  }
+  if (gridW === null && productionW !== null && consumptionW !== null) {
+    gridW = consumptionW - productionW - batForBalance;
+  }
 
   return {
     ts: new Date().toISOString(),

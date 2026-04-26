@@ -12,8 +12,18 @@ export async function pollShellyOnce(): Promise<void> {
   await Promise.allSettled(
     devices.map(async (d) => {
       try {
-        const reading = await shellyNs.fetchShellyStatus(d.externalId);
-        const meta = (d.vendorMeta as { invertSign?: boolean } | null) ?? null;
+        const meta =
+          (d.vendorMeta as {
+            invertSign?: boolean;
+            channel?: number | null;
+          } | null) ?? null;
+        const channel =
+          typeof meta?.channel === "number" ? meta.channel : null;
+        const reading = await shellyNs.fetchShellyStatus(
+          d.externalId,
+          undefined,
+          channel,
+        );
         const invert = meta?.invertSign === true;
         const powerW =
           reading.powerW === null

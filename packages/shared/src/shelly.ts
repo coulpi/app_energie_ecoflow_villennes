@@ -12,19 +12,25 @@ export interface ShellyReading {
   raw: unknown;
 }
 
+/**
+ * Lit le Shelly. `channel` permet de sélectionner un canal spécifique
+ * (utile pour Shelly EM 2-canaux où chaque clamp mesure un circuit
+ * différent). `null` ou non fourni = somme de tous les canaux (par
+ * défaut historique).
+ */
 export async function fetchShellyStatus(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
+  channel: number | null = null,
 ): Promise<ShellyReading> {
   const url = baseUrl.replace(/\/+$/, "");
-  // Tentative Gen2/3 d'abord (plus précis), fallback Gen1.
   try {
     const r2 = await fetchImpl(`${url}/rpc/Shelly.GetStatus`, {
       signal: AbortSignal.timeout(4000),
     });
     if (r2.ok) {
       const json = (await r2.json()) as Record<string, unknown>;
-      return parseGen2(json);
+      return parseGen2(json, channel);
     }
   } catch {
     // ignore, on tente Gen1
@@ -37,12 +43,13 @@ export async function fetchShellyStatus(
     throw new Error(`Shelly HTTP ${r1.status}`);
   }
   const json = (await r1.json()) as Record<string, unknown>;
-  return parseGen1(json);
+  return parseGen1(json, channel);
 }
 
-function parseGen2(s: Record<string, unknown>): ShellyReading {
-  // Gen2 expose des composants nommés `switch:0`, `pm1:0`, `em:0`, `emeter:0`,
-  // selon le modèle. On somme les puissances trouvées.
+function parseGen2(
+  s: Record<string, unknown>,
+  channel: number | null,
+): ShellyReading {
   let powerW = 0;
   let energyWh = 0;
   let found = false;
@@ -55,6 +62,11 @@ function parseGen2(s: Record<string, unknown>): ShellyReading {
       k.startsWith("em:") ||
       k.startsWith("emeter:")
     ) {
+      // Filtre par canal si spécifié.
+      if (channel !== null) {
+        const idx = Number(k.split(":")[1] ?? -1);
+        if (idx !== channel) continue;
+      }
       const o = v as Record<string, unknown>;
       const p =
         (typeof o.apower === "number" && o.apower) ||
@@ -77,20 +89,26 @@ function parseGen2(s: Record<string, unknown>): ShellyReading {
   };
 }
 
-function parseGen1(s: Record<string, unknown>): ShellyReading {
-  // Gen1 expose `meters` (tableau), ou `emeters`, ou `relays[i].power`.
+function parseGen1(
+  s: Record<string, unknown>,
+  channel: number | null,
+): ShellyReading {
   let powerW: number | null = null;
   let energyWh: number | null = null;
 
   for (const key of ["meters", "emeters"]) {
     const arr = s[key];
     if (Array.isArray(arr) && arr.length > 0) {
-      powerW = arr.reduce(
+      const filtered =
+        channel !== null && channel >= 0 && channel < arr.length
+          ? [arr[channel]]
+          : arr;
+      powerW = filtered.reduce(
         (acc, m: Record<string, unknown>) =>
           acc + (typeof m.power === "number" ? m.power : 0),
         0,
       );
-      energyWh = arr.reduce(
+      energyWh = filtered.reduce(
         (acc, m: Record<string, unknown>) =>
           acc + (typeof m.total === "number" ? m.total : 0),
         0,
