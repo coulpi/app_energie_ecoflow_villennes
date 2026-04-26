@@ -18,29 +18,57 @@ export interface OllamaChatOptions {
 export async function ollamaChat(opts: OllamaChatOptions): Promise<string> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const url = opts.baseUrl.replace(/\/+$/, "") + "/api/chat";
+  // Streaming activé : Ollama envoie un chunk par token au format JSON-Lines.
+  // Cela maintient la connexion TCP active même quand le 1er token tarde
+  // (chargement d'un gros modèle en VRAM par exemple), évitant les timeouts
+  // proxy / keep-alive intermédiaires.
   const res = await fetchImpl(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: opts.model,
       messages: opts.messages,
-      stream: false,
+      stream: true,
       format: opts.format,
+      keep_alive: "30m",
       options: {
         temperature: opts.temperature ?? 0.2,
       },
     }),
     signal: opts.signal,
   });
-  if (!res.ok) {
+  if (!res.ok || !res.body) {
     throw new Error(`Ollama HTTP ${res.status}: ${await res.text()}`);
   }
-  const json = (await res.json()) as {
-    message?: { content?: string };
-    error?: string;
-  };
-  if (json.error) throw new Error(`Ollama error: ${json.error}`);
-  return json.message?.content ?? "";
+
+  let content = "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const obj = JSON.parse(line) as {
+          message?: { content?: string };
+          done?: boolean;
+          error?: string;
+        };
+        if (obj.error) throw new Error(`Ollama error: ${obj.error}`);
+        if (obj.message?.content) content += obj.message.content;
+      } catch (e) {
+        // Ligne non-JSON : ignorée (peut arriver en début/fin de stream).
+        if ((e as Error).message.startsWith("Ollama error:")) throw e;
+      }
+    }
+  }
+  return content;
 }
 
 export async function ollamaListModels(
