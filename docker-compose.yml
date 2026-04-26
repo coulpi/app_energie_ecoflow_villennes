@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ecoflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-ecoflow}
+      TZ: Europe/Paris
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-EcoFlow Villennes}
+      TZ: Europe/Paris
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ECOFLOW_ACCESS_KEY: ${ECOFLOW_ACCESS_KEY}
+      ECOFLOW_SECRET_KEY: ${ECOFLOW_SECRET_KEY}
+      ECOFLOW_API_BASE: ${ECOFLOW_API_BASE}
+      ECOFLOW_MQTT_BROKER: ${ECOFLOW_MQTT_BROKER}
+      ECOFLOW_MQTT_PORT: ${ECOFLOW_MQTT_PORT}
+      TUYA_CLIENT_ID: ${TUYA_CLIENT_ID}
+      TUYA_CLIENT_SECRET: ${TUYA_CLIENT_SECRET}
+      TUYA_REGION: ${TUYA_REGION}
+      TUYA_API_BASE: ${TUYA_API_BASE}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
+      RAW_RETENTION_DAYS: ${RAW_RETENTION_DAYS:-30}
+      HOURLY_RETENTION_DAYS: ${HOURLY_RETENTION_DAYS:-365}
+      TZ: Europe/Paris
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

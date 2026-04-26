@@ -1,0 +1,167 @@
+// Prisma schema — EcoFlow + Tuya energy management
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DeviceType {
+  TUYA_METER
+  TUYA_SWITCH
+  ECOFLOW_BATTERY
+}
+
+enum DeviceRole {
+  PRODUCTION_METER
+  CONSUMPTION_METER
+  BATTERY_AC_SWITCH
+  BATTERY
+}
+
+enum RuleActionStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum TariffPeriod {
+  OFF_PEAK
+  PEAK
+  SHOULDER
+}
+
+enum ControlMode {
+  MANUAL
+  RULES
+  FOLLOW_LOAD // discharge_W asservi à la consommation maison
+  OFF
+}
+
+model Device {
+  id           String       @id @default(cuid())
+  type         DeviceType
+  role         DeviceRole
+  externalId   String       @unique
+  name         String
+  vendorMeta   Json?
+  capabilities Json?
+  enabled      Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  readings        Reading[]
+  hourlyReadings  ReadingHourly[]
+  ruleExecutions  RuleExecution[]
+}
+
+model Reading {
+  id        BigInt   @id @default(autoincrement())
+  deviceId  String
+  ts        DateTime @db.Timestamptz(3)
+  powerW    Float?
+  energyWh  Float?
+  soc       Float?
+  switchOn  Boolean?
+  raw       Json?
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, ts(sort: Desc)])
+  @@index([ts(sort: Desc)])
+}
+
+model ReadingHourly {
+  id         BigInt   @id @default(autoincrement())
+  deviceId   String
+  hourTs     DateTime @db.Timestamptz(3)
+  avgPowerW  Float?
+  prodWh     Float?
+  consoWh    Float?
+  minSoc     Float?
+  maxSoc     Float?
+  samples    Int      @default(0)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, hourTs])
+  @@index([hourTs(sort: Desc)])
+}
+
+model AutomationRule {
+  id              String   @id @default(cuid())
+  name            String
+  enabled         Boolean  @default(true)
+  priority        Int      @default(100)
+  conditionExpr   Json
+  actions         Json
+  minHoldSeconds  Int      @default(60)
+  hysteresis      Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  executions RuleExecution[]
+}
+
+model RuleExecution {
+  id         BigInt           @id @default(autoincrement())
+  ruleId     String
+  ts         DateTime         @default(now()) @db.Timestamptz(3)
+  triggered  Boolean
+  status     RuleActionStatus
+  context    Json?
+  result     Json?
+  error      String?
+  deviceId   String?
+
+  rule   AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  device Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([ruleId, ts(sort: Desc)])
+  @@index([ts(sort: Desc)])
+}
+
+model SystemConfig {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// Fenêtres tarifaires (heures creuses / pleines / pointe).
+// Exprimées en heure locale (Europe/Paris). Les jours sont un bitmap
+// (1=Lun ... 7=Dim) ou null pour tous les jours.
+model TariffWindow {
+  id          String       @id @default(cuid())
+  name        String
+  period      TariffPeriod
+  startMinute Int          // minutes depuis 00:00, 0..1439
+  endMinute   Int          // peut être > startMinute (chevauchement minuit géré côté code)
+  daysOfWeek  Int[]        // [1..7], vide = tous les jours
+  pricePerKwh Float?
+  enabled     Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([enabled, period])
+}
+
+// État courant du contrôleur — singleton (key = "default").
+model ControlState {
+  key                String      @id @default("default")
+  mode               ControlMode @default(RULES)
+  // Cible d'injection lorsque mode = FOLLOW_LOAD : marge à appliquer
+  // sous la consommation maison pour éviter l'export réseau (W).
+  followLoadOffsetW  Int         @default(50)
+  // Bornes d'injection appliquées en mode FOLLOW_LOAD.
+  followLoadMinW     Int         @default(0)
+  followLoadMaxW     Int         @default(800)
+  // SoC minimum auquel on s'autorise à décharger.
+  minDischargeSoc    Int         @default(20)
+  // SoC maximum visé en charge.
+  maxChargeSoc       Int         @default(95)
+  updatedAt          DateTime    @updatedAt
+}
