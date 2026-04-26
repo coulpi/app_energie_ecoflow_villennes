@@ -35,7 +35,9 @@ export async function pollTuyaOnce(): Promise<void> {
     devices.map(async (d) => {
       try {
         const status = await c.getDeviceStatus(d.externalId);
-        const powerW = TuyaClient.extractPowerW(status);
+        // GRID_METER : on conserve le signe (+ import / - export).
+        const signed = d.role === "GRID_METER";
+        const powerW = TuyaClient.extractPowerW(status, signed);
         const energyWh = TuyaClient.extractEnergyWh(status);
         const switchOn =
           d.type === "TUYA_SWITCH" ? TuyaClient.extractSwitchOn(status) : null;

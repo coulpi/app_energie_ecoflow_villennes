@@ -165,20 +165,48 @@ export class TuyaClient {
 
   /**
    * Lit la puissance instantanée d'un compteur Tuya.
-   * Les codes les plus fréquents : `cur_power` (W*10), `phase_a` (struct).
-   * Retourne null si non trouvé.
+   *
+   * Compatible :
+   *  - prises connectées (`cur_power` en W*10)
+   *  - PJ2101A bidirectionnel : champ `phase_a` (string base64 ou struct
+   *    {voltage, electriccurrent, power}), champ `power_a`, ou différence
+   *    forward/reverse.
+   *
+   * `signed = true` retourne la puissance signée (PJ2101A : +import, -export).
+   * `signed = false` (défaut) retourne la valeur absolue.
    */
-  static extractPowerW(status: TuyaStatus[]): number | null {
+  static extractPowerW(
+    status: TuyaStatus[],
+    signed = false,
+  ): number | null {
     const m = new Map(status.map((s) => [s.code, s.value] as const));
-    if (m.has("cur_power") && typeof m.get("cur_power") === "number") {
+
+    // PJ2101A : phase_a peut être string base64 encodée → décodage spécifique.
+    if (m.has("phase_a")) {
+      const v = m.get("phase_a");
+      const decoded = decodePhaseA(v);
+      if (decoded?.powerW !== null && decoded?.powerW !== undefined) {
+        return signed ? decoded.powerW : Math.abs(decoded.powerW);
+      }
+    }
+
+    // Champ power_a explicite (certains firmwares)
+    for (const k of ["power_a", "active_power", "power"]) {
+      const v = m.get(k);
+      if (typeof v === "number") {
+        return signed ? v : Math.abs(v);
+      }
+    }
+
+    // Prises classiques : cur_power en W*10
+    if (typeof m.get("cur_power") === "number") {
       return (m.get("cur_power") as number) / 10;
     }
-    if (m.has("power_total") && typeof m.get("power_total") === "number") {
+
+    if (typeof m.get("power_total") === "number") {
       return m.get("power_total") as number;
     }
-    if (m.has("active_power") && typeof m.get("active_power") === "number") {
-      return m.get("active_power") as number;
-    }
+
     return null;
   }
 
@@ -211,4 +239,45 @@ export interface TuyaStatus {
 export interface TuyaCommand {
   code: string;
   value: unknown;
+}
+
+/**
+ * Le PJ2101A encode `phase_a` en base64 d'un buffer binaire :
+ *   bytes 0-1 : voltage (×10, big-endian)
+ *   bytes 2-4 : current mA (24-bit, big-endian)
+ *   bytes 5-7 : power W (24-bit, big-endian, peut être signé via bit haut)
+ * Source : nombreux retours d'expérience publics sur ce modèle.
+ *
+ * Si la valeur arrive déjà comme objet {voltage, electriccurrent, power}, on
+ * la lit directement.
+ */
+function decodePhaseA(value: unknown): {
+  voltageV: number | null;
+  currentA: number | null;
+  powerW: number | null;
+} | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const o = value as Record<string, unknown>;
+    return {
+      voltageV: typeof o.voltage === "number" ? o.voltage / 10 : null,
+      currentA:
+        typeof o.electriccurrent === "number"
+          ? o.electriccurrent / 1000
+          : null,
+      powerW: typeof o.power === "number" ? o.power : null,
+    };
+  }
+  if (typeof value !== "string") return null;
+  try {
+    const buf = Buffer.from(value, "base64");
+    if (buf.length < 8) return null;
+    const voltage = buf.readUInt16BE(0) / 10;
+    const current = ((buf[2]! << 16) | (buf[3]! << 8) | buf[4]!) / 1000;
+    let power = (buf[5]! << 16) | (buf[6]! << 8) | buf[7]!;
+    // Bit de signe sur 24 bits.
+    if (power & 0x800000) power = power - 0x1000000;
+    return { voltageV: voltage, currentA: current, powerW: power };
+  } catch {
+    return null;
+  }
 }

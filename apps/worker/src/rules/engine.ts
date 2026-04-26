@@ -12,6 +12,7 @@ import { applyAction, type ActionContext } from "./actions.js";
 interface MetricSnapshot {
   production_W: number | null;
   consumption_W: number | null;
+  grid_W: number | null; // signé : + import, - export
   surplus_W: number | null;
   battery_soc: number | null;
   switch_state: boolean | null;
@@ -40,21 +41,29 @@ export async function buildSnapshot(now = new Date()): Promise<MetricSnapshot> {
 
   const prod = await lastReading("PRODUCTION_METER");
   const cons = await lastReading("CONSUMPTION_METER");
+  const grid = await lastReading("GRID_METER");
   const battery = await lastReading("BATTERY");
   const sw = await lastReading("BATTERY_AC_SWITCH");
 
   const production_W = prod?.powerW ?? null;
-  const consumption_W = cons?.powerW ?? null;
+  const grid_W = grid?.powerW ?? null;
+  let consumption_W = cons?.powerW ?? null;
+  if (consumption_W === null && production_W !== null && grid_W !== null) {
+    consumption_W = production_W + grid_W;
+  }
   const surplus_W =
-    production_W !== null && consumption_W !== null
-      ? production_W - consumption_W
-      : null;
+    grid_W !== null
+      ? -grid_W
+      : production_W !== null && consumption_W !== null
+        ? production_W - consumption_W
+        : null;
 
   const tariffPeriod = await currentTariffPeriod(now);
 
   return {
     production_W,
     consumption_W,
+    grid_W,
     surplus_W,
     battery_soc: battery?.soc ?? null,
     switch_state: sw?.switchOn ?? null,
@@ -93,6 +102,8 @@ function metricValue(m: MetricSnapshot, key: ConditionAtom["metric"]): unknown {
       return m.production_W;
     case "consumption_W":
       return m.consumption_W;
+    case "grid_W":
+      return m.grid_W;
     case "surplus_W":
       return m.surplus_W;
     case "battery.soc":

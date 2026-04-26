@@ -50,6 +50,7 @@ function safeEvalExpr(expr: string, m: MetricSnapshot): number | null {
   const env: Record<string, number> = {
     production_W: m.production_W ?? 0,
     consumption_W: m.consumption_W ?? 0,
+    grid_W: m.grid_W ?? 0,
     surplus_W: m.surplus_W ?? 0,
     battery_soc: m.battery_soc ?? 0,
   };

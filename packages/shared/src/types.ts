@@ -4,12 +4,14 @@ export const DeviceTypeSchema = z.enum([
   "TUYA_METER",
   "TUYA_SWITCH",
   "ECOFLOW_BATTERY",
+  "SHELLY_METER",
 ]);
 export type DeviceType = z.infer<typeof DeviceTypeSchema>;
 
 export const DeviceRoleSchema = z.enum([
   "PRODUCTION_METER",
   "CONSUMPTION_METER",
+  "GRID_METER",
   "BATTERY_AC_SWITCH",
   "BATTERY",
 ]);

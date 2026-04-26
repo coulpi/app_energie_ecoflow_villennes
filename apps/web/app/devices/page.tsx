@@ -58,18 +58,22 @@ export default async function DevicesPage() {
         <select name="type" className="bg-zinc-800 rounded px-3 py-2">
           <option value="TUYA_METER">Tuya — compteur</option>
           <option value="TUYA_SWITCH">Tuya — prise on/off</option>
+          <option value="SHELLY_METER">Shelly — compteur (LAN)</option>
           <option value="ECOFLOW_BATTERY">EcoFlow — batterie</option>
         </select>
         <select name="role" className="bg-zinc-800 rounded px-3 py-2">
-          <option value="PRODUCTION_METER">Production</option>
-          <option value="CONSUMPTION_METER">Consommation</option>
+          <option value="PRODUCTION_METER">Production (solaire)</option>
+          <option value="CONSUMPTION_METER">Consommation maison</option>
+          <option value="GRID_METER">
+            Réseau (bidirectionnel ±)
+          </option>
           <option value="BATTERY_AC_SWITCH">Prise AC batterie</option>
           <option value="BATTERY">Batterie</option>
         </select>
         <input
           name="externalId"
           required
-          placeholder="ID cloud (Tuya devId / EcoFlow SN)"
+          placeholder="Tuya devId / EcoFlow SN / Shelly URL (http://192.168.x.y)"
           className="bg-zinc-800 rounded px-3 py-2 sm:col-span-2"
         />
         <input

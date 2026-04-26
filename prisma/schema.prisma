@@ -14,11 +14,13 @@ enum DeviceType {
   TUYA_METER
   TUYA_SWITCH
   ECOFLOW_BATTERY
+  SHELLY_METER
 }
 
 enum DeviceRole {
   PRODUCTION_METER
   CONSUMPTION_METER
+  GRID_METER          // compteur bidirectionnel (signé : + import, - export)
   BATTERY_AC_SWITCH
   BATTERY
 }

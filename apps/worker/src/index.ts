@@ -1,6 +1,7 @@
 import { env } from "./env.js";
 import { log } from "./log.js";
 import { startTuyaPoller } from "./pollers/tuya.js";
+import { startShellyPoller } from "./pollers/shelly.js";
 import { startEcoFlowMqtt } from "./pollers/ecoflow.js";
 import { startRollupScheduler } from "./jobs/rollup.js";
 import { startRulesEngine } from "./rules/engine.js";
@@ -12,6 +13,7 @@ async function main() {
   });
 
   startTuyaPoller(env.POLL_INTERVAL_SECONDS);
+  startShellyPoller(env.POLL_INTERVAL_SECONDS);
 
   try {
     await startEcoFlowMqtt();

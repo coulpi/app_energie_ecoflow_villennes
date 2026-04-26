@@ -74,7 +74,19 @@ export default async function Page() {
         <Tile label="Batterie SoC" value={fmtPct(s.batterySoc)} tone={socTone} />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <Tile
+          label="Réseau (signé)"
+          value={fmtW(s.gridW)}
+          hint={
+            s.gridW === null
+              ? undefined
+              : s.gridW > 0
+                ? "import depuis le réseau"
+                : "export vers le réseau"
+          }
+          tone={s.gridW === null ? "default" : s.gridW > 0 ? "warn" : "good"}
+        />
         <Tile label="Puissance batterie" value={fmtW(s.batteryPowerW)} />
         <Tile
           label="Prise AC batterie"

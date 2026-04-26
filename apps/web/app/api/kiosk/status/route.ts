@@ -16,6 +16,7 @@ export async function GET() {
   const pack = {
     p: s.productionW === null ? null : Math.round(s.productionW),
     c: s.consumptionW === null ? null : Math.round(s.consumptionW),
+    g: s.gridW === null ? null : Math.round(s.gridW),
     s: s.surplusW === null ? null : Math.round(s.surplusW),
     soc: s.batterySoc === null ? null : Math.round(s.batterySoc),
     bp: s.batteryPowerW === null ? null : Math.round(s.batteryPowerW),

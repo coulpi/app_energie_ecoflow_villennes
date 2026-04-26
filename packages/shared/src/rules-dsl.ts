@@ -6,6 +6,7 @@ export const ConditionAtomSchema = z.object({
   metric: z.enum([
     "production_W",
     "consumption_W",
+    "grid_W",
     "surplus_W",
     "battery.soc",
     "tuya.switch.state",
