@@ -1,5 +1,19 @@
+import { setGlobalDispatcher, Agent as UndiciAgent } from "undici";
 import { env } from "./env.js";
 import { log } from "./log.js";
+
+// Le dispatcher fetch par défaut de Node 20 (undici) ferme la connexion
+// après 5 min sans byte reçu (bodyTimeout) et 5 min sans headers
+// (headersTimeout). Pour des modèles LLM volumineux qui peuvent mettre
+// plusieurs minutes à charger / générer, on désactive ces deadlines.
+setGlobalDispatcher(
+  new UndiciAgent({
+    headersTimeout: 0,
+    bodyTimeout: 0,
+    keepAliveTimeout: 60_000,
+    keepAliveMaxTimeout: 600_000,
+  }),
+);
 import { startTuyaPoller } from "./pollers/tuya.js";
 import { startShellyPoller } from "./pollers/shelly.js";
 import { startEcoFlowMqtt, startEcoFlowPoller } from "./pollers/ecoflow.js";
