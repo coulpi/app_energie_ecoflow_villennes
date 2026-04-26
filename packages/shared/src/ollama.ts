@@ -13,6 +13,12 @@ export interface OllamaChatOptions {
   format?: "json";
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
+  onProgress?: (info: {
+    chunks: number;
+    contentLen: number;
+    ttfbMs: number;
+    totalMs: number;
+  }) => void;
 }
 
 export async function ollamaChat(opts: OllamaChatOptions): Promise<string> {
@@ -31,6 +37,10 @@ export async function ollamaChat(opts: OllamaChatOptions): Promise<string> {
       stream: true,
       format: opts.format,
       keep_alive: "30m",
+      // Désactive le mode "thinking" sur les modèles qui le supportent
+      // (gemma4, qwq, deepseek-r1...) — sinon ils peuvent raisonner
+      // pendant des minutes avant de produire le moindre token de réponse.
+      think: false,
       options: {
         temperature: opts.temperature ?? 0.2,
       },
@@ -42,12 +52,16 @@ export async function ollamaChat(opts: OllamaChatOptions): Promise<string> {
   }
 
   let content = "";
+  let firstChunkAt = 0;
+  let chunks = 0;
+  const start = Date.now();
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (!firstChunkAt) firstChunkAt = Date.now();
     buffer += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buffer.indexOf("\n")) >= 0) {
@@ -56,17 +70,26 @@ export async function ollamaChat(opts: OllamaChatOptions): Promise<string> {
       if (!line) continue;
       try {
         const obj = JSON.parse(line) as {
-          message?: { content?: string };
+          message?: { content?: string; thinking?: string };
           done?: boolean;
           error?: string;
         };
         if (obj.error) throw new Error(`Ollama error: ${obj.error}`);
         if (obj.message?.content) content += obj.message.content;
+        chunks++;
       } catch (e) {
-        // Ligne non-JSON : ignorée (peut arriver en début/fin de stream).
         if ((e as Error).message.startsWith("Ollama error:")) throw e;
       }
     }
+  }
+  // Diagnostic facultatif : si l'appelant fournit un onProgress hook on l'appelle
+  if (opts.onProgress) {
+    opts.onProgress({
+      chunks,
+      contentLen: content.length,
+      ttfbMs: firstChunkAt ? firstChunkAt - start : 0,
+      totalMs: Date.now() - start,
+    });
   }
   return content;
 }

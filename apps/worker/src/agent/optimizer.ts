@@ -300,6 +300,10 @@ export async function runAgent(
   });
 
   try {
+    log.info("agent: calling ollama", {
+      model: settings.model,
+      promptLen: userPrompt.length,
+    });
     const response = await ollamaChat({
       baseUrl: env.OLLAMA_BASE_URL,
       model: settings.model,
@@ -309,7 +313,10 @@ export async function runAgent(
       ],
       format: "json",
       temperature: 0.1,
-      signal: AbortSignal.timeout(1800_000), // 30 min — un 31B sur GPU moyen avec prompt riche peut prendre 10-20 min
+      signal: AbortSignal.timeout(1800_000),
+      onProgress: (info) => {
+        log.info("agent: ollama stream done", info);
+      },
     });
 
     const proposal = tryParseJson(response);
