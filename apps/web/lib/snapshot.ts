@@ -118,6 +118,16 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   if (batteryPowerW !== null && Math.abs(batteryPowerW) < 30) {
     batteryPowerW = 0;
   }
+  // Cohérence avec la prise AC : si la prise est OFF, la batterie ne peut
+  // pas charger via AC. Une valeur "charging" issue du calcul amp×vol
+  // (cell balancing, micro-courants internes) doit être ignorée.
+  if (
+    sw?.switchOn === false &&
+    batteryPowerW !== null &&
+    batteryPowerW < 0 // < 0 = charge dans notre convention
+  ) {
+    batteryPowerW = 0;
+  }
 
   // 1) Bilan énergétique direct : si on a la conso mesurée + prod + grid,
   //    bat = cons - prod - grid (le plus précis possible).
