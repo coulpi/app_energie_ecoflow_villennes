@@ -9,6 +9,7 @@ import { env } from "./env.js";
 import { log } from "./log.js";
 import { runAgent } from "./agent/optimizer.js";
 import { detectLoadsOnce } from "./agent/loads.js";
+import { publishEcoFlowSet, getEcoFlowPrivateMqtt } from "./pollers/ecoflow.js";
 
 const PORT = 3100;
 
@@ -34,6 +35,47 @@ export function startHttpServer(): http.Server {
 
       if (req.method === "POST" && url.pathname === "/detect-loads") {
         await detectLoadsOnce();
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/ecoflow/status") {
+        const ctx = getEcoFlowPrivateMqtt();
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            privateMqttConnected: ctx !== null,
+            userId: ctx?.userId ?? null,
+          }),
+        );
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/ecoflow/cmd") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          sn: string;
+          moduleType: number;
+          operateType: string;
+          params: Record<string, unknown>;
+        };
+        if (!body.sn || typeof body.moduleType !== "number" || !body.operateType) {
+          res.writeHead(400);
+          res.end(
+            JSON.stringify({
+              error: "champs requis : sn, moduleType (number), operateType, params",
+            }),
+          );
+          return;
+        }
+        await publishEcoFlowSet(body.sn, {
+          moduleType: body.moduleType,
+          operateType: body.operateType,
+          params: body.params ?? {},
+        });
+        log.info("ecoflow cmd published", body);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
         return;

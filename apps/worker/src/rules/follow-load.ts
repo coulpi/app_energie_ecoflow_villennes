@@ -22,6 +22,11 @@ const SURPLUS_HYST_W = 50;
 // Rampe : variation max de la puissance de charge entre 2 ticks. À 30 s
 // de polling, 100 W/tick ≈ +200 W/min, monte de 0 à 800 W en ~4 min.
 const CHARGE_RAMP_W_PER_TICK = 100;
+// Tolérance : on accepte de charger en tirant un peu sur le réseau (la
+// batterie ne peut pas descendre sous chargeMinW). Au-delà de cette durée
+// continue en déficit pendant la charge, on coupe la prise.
+const CHARGE_DEFICIT_TIMEOUT_MS = 10 * 60_000;
+let deficitStartedAtMs: number | null = null;
 
 interface AppliedState {
   switchOn: boolean | null;
@@ -93,21 +98,56 @@ export async function tickFollowLoad(): Promise<void> {
   const soc = m.battery_soc;
 
   const surplus = m.surplus_W; // > 0 = export, < 0 = import
-  const switchOnTriggerW = chargeMinW + SURPLUS_HYST_W;
-  const switchOffTriggerW = chargeMinW - SURPLUS_HYST_W;
+  const alreadyCharging = last.switchOn === true;
+  const now = Date.now();
 
-  // (1) SURPLUS suffisant + capacité d'absorber → CHARGE
-  const canCharge =
-    surplus >= switchOnTriggerW &&
-    (soc === null || soc < ctrl.maxChargeSoc);
+  // Démarrage de charge : surplus suffisant pour tenir au-dessus de
+  // chargeMinW + marge de sécurité. On ne lance que dans des conditions
+  // confortables.
+  const switchOnTriggerW = chargeMinW + SURPLUS_HYST_W; // ex. 450 W
+
+  // Fois en charge : on tolère que le surplus descende sous chargeMinW
+  // (la batterie chargera au minimum hardware en tirant un peu sur le
+  // réseau). On ne coupe que si cet état dure plus de
+  // CHARGE_DEFICIT_TIMEOUT_MS — un consommateur temporaire (four, plaque,
+  // etc.) qui démarre puis s'arrête ne fait pas claquer la prise.
+  const canStartCharge =
+    surplus >= switchOnTriggerW && (soc === null || soc < ctrl.maxChargeSoc);
+  const canKeepCharge =
+    alreadyCharging && (soc === null || soc < ctrl.maxChargeSoc);
 
   // (2) DÉFICIT + capacité de fournir → DÉCHARGE
   const canDischarge =
+    !alreadyCharging &&
     surplus < 0 &&
     Math.abs(surplus) > 30 &&
     (soc === null || soc > ctrl.minDischargeSoc);
 
-  if (canCharge) {
+  if (canStartCharge || canKeepCharge) {
+    // Suivi du déficit : tant que surplus < chargeMinW pendant la charge,
+    // la batterie consomme du réseau. On laisse 10 min, puis on coupe.
+    if (surplus < chargeMinW) {
+      if (deficitStartedAtMs === null) {
+        deficitStartedAtMs = now;
+        log.info("follow-load: déficit charge détecté, tolérance 10 min", {
+          surplus_W: surplus,
+          chargeMinW,
+        });
+      } else if (now - deficitStartedAtMs > CHARGE_DEFICIT_TIMEOUT_MS) {
+        log.info("follow-load: déficit charge > 10 min, coupure prise", {
+          surplus_W: surplus,
+        });
+        await setCharge(0);
+        await setSwitch(false);
+        await setDischarge(0);
+        deficitStartedAtMs = null;
+        return;
+      }
+    } else {
+      // Surplus revenu au-dessus du seuil → on remet le timer à zéro.
+      deficitStartedAtMs = null;
+    }
+
     const desired = Math.max(
       chargeMinW,
       Math.min(chargeMaxW, surplus - chargeOffsetW),
@@ -127,6 +167,9 @@ export async function tickFollowLoad(): Promise<void> {
     return;
   }
 
+  // Sortie de charge (timeout dépassé ou SoC max atteint) : reset timer.
+  deficitStartedAtMs = null;
+
   if (canDischarge) {
     const target = Math.max(
       ctrl.followLoadMinW,
@@ -138,12 +181,10 @@ export async function tickFollowLoad(): Promise<void> {
     return;
   }
 
-  // (3) Idle ou SoC limite : tout à zéro, prise OFF.
-  // Surplus dans la zone basse (< chargeMinW − hyst) ou SoC bloquant.
-  if (surplus < switchOffTriggerW) {
-    await setCharge(0);
-    await setSwitch(false);
-  }
+  // (3) Idle / SoC limite / hors fenêtre charge et décharge : tout à zéro,
+  // prise OFF.
+  await setCharge(0);
+  await setSwitch(false);
   await setDischarge(0);
 }
 

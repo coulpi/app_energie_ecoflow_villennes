@@ -211,3 +211,41 @@ export function connectEcoFlowPrivateMqtt(
   client.on("error", (e) => opts.onError?.(e));
   return client;
 }
+
+/**
+ * Publie une commande "set" sur le canal MQTT privé EcoFlow. Le format est
+ * celui utilisé par l'app mobile : topic /app/{userId}/{sn}/thing/property/set
+ * avec un JSON contenant id (random), version, moduleType, operateType, params.
+ *
+ * Le mapping (moduleType, operateType, params) dépend du modèle ; cf.
+ * intégrations communautaires (home-assistant-ecoflow, ecoflow_iot_open).
+ * Pour Delta Max charge AC, les pistes connues sont :
+ *   - moduleType 5, operateType "acChgCfg", params { chgWatts, chgPauseFlag }
+ *   - moduleType 1, operateType "TCP",       params { id: 69, slowChgPower }
+ */
+export function publishEcoFlowPrivateCommand(
+  client: MqttClient,
+  userId: string,
+  sn: string,
+  body: {
+    moduleType: number;
+    operateType: string;
+    params: Record<string, unknown>;
+  },
+): Promise<void> {
+  const topic = `/app/${userId}/${sn}/thing/property/set`;
+  const payload = JSON.stringify({
+    from: "iOS",
+    id: crypto.randomUUID(),
+    version: "1.0",
+    moduleType: body.moduleType,
+    operateType: body.operateType,
+    params: body.params,
+  });
+  return new Promise<void>((resolve, reject) => {
+    client.publish(topic, payload, { qos: 1 }, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}

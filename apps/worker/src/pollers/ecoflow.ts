@@ -4,9 +4,42 @@ import { env } from "../env.js";
 import { log } from "../log.js";
 
 const { EcoFlowClient, connectEcoFlowMqtt } = ecoflowNs;
-const { EcoFlowPrivateClient, connectEcoFlowPrivateMqtt } = ecoflowPrivateNs;
+const {
+  EcoFlowPrivateClient,
+  connectEcoFlowPrivateMqtt,
+  publishEcoFlowPrivateCommand,
+} = ecoflowPrivateNs;
 
 let restClient: InstanceType<typeof EcoFlowClient> | null = null;
+
+// Singletons pour permettre à actions.ts d'envoyer des commandes via le
+// MQTT privé (l'API REST publique répond systématiquement 1006 sur Delta Max).
+import type { MqttClient } from "mqtt";
+let privateMqttClient: MqttClient | null = null;
+let privateMqttUserId: string | null = null;
+
+export function getEcoFlowPrivateMqtt(): {
+  client: MqttClient;
+  userId: string;
+} | null {
+  if (!privateMqttClient || !privateMqttUserId) return null;
+  return { client: privateMqttClient, userId: privateMqttUserId };
+}
+
+export async function publishEcoFlowSet(
+  sn: string,
+  body: {
+    moduleType: number;
+    operateType: string;
+    params: Record<string, unknown>;
+  },
+): Promise<void> {
+  const ctx = getEcoFlowPrivateMqtt();
+  if (!ctx) {
+    throw new Error("ecoflow private mqtt non connecté");
+  }
+  await publishEcoFlowPrivateCommand(ctx.client, ctx.userId, sn, body);
+}
 
 export function getEcoFlowClient() {
   if (!restClient) {
@@ -125,7 +158,7 @@ export async function startEcoFlowMqtt(): Promise<void> {
         apiBase: env.ECOFLOW_API_BASE,
       });
       const cert = await priv.getMqttCertification();
-      connectEcoFlowPrivateMqtt({
+      const client = connectEcoFlowPrivateMqtt({
         cert,
         serialNumbers: batteries.map((b) => b.externalId),
         onConnect: () =>
@@ -173,6 +206,8 @@ export async function startEcoFlowMqtt(): Promise<void> {
         onError: (e) =>
           log.warn("ecoflow private mqtt error", { error: e.message }),
       });
+      privateMqttClient = client;
+      privateMqttUserId = cert.userId;
       return;
     } catch (e) {
       log.warn("ecoflow private mqtt setup failed, falling back to developer", {
