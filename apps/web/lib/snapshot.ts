@@ -129,6 +129,15 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   let consumptionW: number | null = null; // sera calculé par bilan
   let batteryPowerW: number | null = bat?.powerW ?? null;
 
+  // (0) Priorité absolue : si la prise AC est ON et rapporte une conso
+  // significative, c'est la mesure la plus fiable de la charge en cours.
+  // Le BMS Delta Max envoie parfois des pics transitoires sur amp×vol DC
+  // (vu jusqu'à 2.1 kW alors que la prise AC en passe 500). On préfère
+  // la mesure AC réelle en entrée de batterie.
+  if (sw?.switchOn === true && sw.powerW !== null && sw.powerW > 30) {
+    batteryPowerW = -sw.powerW;
+  }
+
   // 1) Si l'API privée (BMS) ne donne rien, on tente le bilan énergétique.
   if (
     batteryPowerW === null &&
