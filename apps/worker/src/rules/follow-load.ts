@@ -125,13 +125,6 @@ export async function tickFollowLoad(): Promise<void> {
   const m = await buildSnapshot();
   if (m.consumption_W === null || m.surplus_W === null) return;
 
-  // S'assurer que la sortie AC de la batterie est ON, sinon la batterie
-  // ne peut alimenter aucun circuit maison même en discharge programmée.
-  // Idempotent (n'envoie la commande qu'au premier passage / changement).
-  if (m.battery_soc === null || m.battery_soc > 5) {
-    await setAcOutput(true);
-  }
-
   // Resync : si l'état Tuya réel ne correspond pas à ce qu'on pense avoir
   // appliqué (quelqu'un — agent, manuel, autre rule — a coupé la prise),
   // on remet last.switchOn au réel pour que la décision suivante envoie
