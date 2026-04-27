@@ -64,6 +64,33 @@ export function startHttpServer(): http.Server {
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/ecoflow/rest-set") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          sn: string;
+          moduleType: number;
+          operateType: string;
+          params: Record<string, unknown>;
+        };
+        const { getEcoFlowClient } = await import("./pollers/ecoflow.js");
+        try {
+          const result = await getEcoFlowClient().setProperty(
+            body.sn,
+            body.moduleType,
+            body.operateType,
+            body.params ?? {},
+          );
+          log.info("ecoflow rest-set ok", { ...body, result });
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, result }));
+        } catch (e) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        }
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/ecoflow/raw") {
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);

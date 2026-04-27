@@ -141,6 +141,28 @@ export class EcoFlowClient {
   }
 
   /**
+   * Format moderne (Delta 2 Max et batteries récentes) :
+   * { id, version, sn, moduleType, operateType, params }.
+   * Ce format est documenté sur developer-eu.ecoflow.com et accepté par
+   * les firmwares à jour, là où l'ancien `cmdCode` renvoie `1006`.
+   */
+  async setProperty(
+    sn: string,
+    moduleType: number,
+    operateType: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.request("PUT", "/iot-open/sign/device/quota", {
+      id: Math.floor(Math.random() * 1_000_000),
+      version: "1.0",
+      sn,
+      moduleType,
+      operateType,
+      params,
+    });
+  }
+
+  /**
    * Récupère les credentials MQTT à utiliser pour s'abonner aux topics
    * temps réel des appareils.
    */
