@@ -2,7 +2,7 @@ import type { RuleAction } from "@app/shared";
 import { tuya as tuyaNs } from "@app/shared";
 import { prisma } from "../db.js";
 import { env } from "../env.js";
-import { getEcoFlowClient } from "../pollers/ecoflow.js";
+import { publishEcoFlowSet } from "../pollers/ecoflow.js";
 import { ECOFLOW_CMDS } from "./ecoflow-cmds.js";
 import { log } from "../log.js";
 import type { MetricSnapshot } from "./engine.js";
@@ -117,7 +117,7 @@ export async function applyAction(
       const bat = await findDevice("BATTERY");
       const watts = Number(params.watts ?? 0);
       const cmd = ECOFLOW_CMDS.setChargeWatts(bat, watts);
-      await getEcoFlowClient().setQuota(bat.externalId, cmd.cmdCode, cmd.params);
+      await publishEcoFlowSet(bat.externalId, cmd);
       return { sn: bat.externalId, watts };
     }
 
@@ -125,7 +125,13 @@ export async function applyAction(
       const bat = await findDevice("BATTERY");
       const watts = Number(params.watts ?? 0);
       const cmd = ECOFLOW_CMDS.setDischargeWatts(bat, watts);
-      await getEcoFlowClient().setQuota(bat.externalId, cmd.cmdCode, cmd.params);
+      if (!cmd) {
+        log.info("setDischargeWatts non supporté par ce modèle", {
+          sn: bat.externalId,
+        });
+        return { sn: bat.externalId, watts, supported: false };
+      }
+      await publishEcoFlowSet(bat.externalId, cmd);
       return { sn: bat.externalId, watts };
     }
 
@@ -133,7 +139,7 @@ export async function applyAction(
       const bat = await findDevice("BATTERY");
       const soc = Number(params.soc ?? 95);
       const cmd = ECOFLOW_CMDS.setMaxChargeSoc(bat, soc);
-      await getEcoFlowClient().setQuota(bat.externalId, cmd.cmdCode, cmd.params);
+      await publishEcoFlowSet(bat.externalId, cmd);
       return { sn: bat.externalId, maxChargeSoc: soc };
     }
 
@@ -141,7 +147,7 @@ export async function applyAction(
       const bat = await findDevice("BATTERY");
       const soc = Number(params.soc ?? 20);
       const cmd = ECOFLOW_CMDS.setMinDischargeSoc(bat, soc);
-      await getEcoFlowClient().setQuota(bat.externalId, cmd.cmdCode, cmd.params);
+      await publishEcoFlowSet(bat.externalId, cmd);
       return { sn: bat.externalId, minDischargeSoc: soc };
     }
 
@@ -149,7 +155,7 @@ export async function applyAction(
       const bat = await findDevice("BATTERY");
       const acOn = Boolean(params.acOn);
       const cmd = ECOFLOW_CMDS.setOutputAc(bat, acOn);
-      await getEcoFlowClient().setQuota(bat.externalId, cmd.cmdCode, cmd.params);
+      await publishEcoFlowSet(bat.externalId, cmd);
       return { sn: bat.externalId, acOn };
     }
 

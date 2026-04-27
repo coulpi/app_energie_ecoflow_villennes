@@ -1,72 +1,67 @@
-// Mapping des commandes EcoFlow par modèle.
+// Mapping des commandes EcoFlow par modèle, format MQTT privé.
 //
-// Les `cmdCode` et la forme exacte de `params` varient entre Delta 2 / Delta Pro /
-// River 2. On regroupe ici la logique pour pouvoir étendre le support facilement.
-// Le modèle se déduit de `device.vendorMeta.model`.
+// Le canal MQTT privé (cf. ecoflow-private.ts) utilise :
+//   { moduleType, operateType, params }
+// publié sur /app/{userId}/{sn}/thing/property/set.
+//
+// Format validé pour Delta Max via le projet tolwi/hassio-ecoflow-cloud
+// (custom_components/ecoflow_cloud/devices/internal/delta_max.py).
 
 import type { Device } from "@prisma/client";
 
-interface CmdSpec {
-  cmdCode: string;
+interface PrivateCmdSpec {
+  moduleType: number;
+  operateType: string;
   params: Record<string, unknown>;
 }
 
 function model(d: Device): string {
-  const m = (d.vendorMeta as { model?: string } | null)?.model ?? "DELTA_2";
+  const m = (d.vendorMeta as { model?: string } | null)?.model ?? "DELTA_MAX";
   return m.toUpperCase();
 }
 
 export const ECOFLOW_CMDS = {
-  setChargeWatts(d: Device, watts: number): CmdSpec {
+  /** Puissance AC max de charge (slowChgPower). Bornes : 100..2000 W. */
+  setChargeWatts(d: Device, watts: number): PrivateCmdSpec {
+    const w = Math.max(100, Math.min(2000, Math.round(watts)));
     switch (model(d)) {
-      case "DELTA_PRO":
-        return {
-          cmdCode: "WN511_SET_AC_INCHARGE_SPEED_PACK",
-          params: { chgWatts: Math.round(watts), chgPauseFlag: 0 },
-        };
       case "DELTA_MAX":
       case "DELTA_2":
       default:
         return {
-          cmdCode: "MPPT_SET_CHARGE_INPUT_LIMIT",
-          params: { chgWatts: Math.round(watts) },
+          moduleType: 0,
+          operateType: "TCP",
+          params: { id: 69, slowChgPower: w },
         };
     }
   },
-  setDischargeWatts(d: Device, watts: number): CmdSpec {
-    // Sur EcoFlow on ne fixe pas une décharge "globale" mais on peut
-    // limiter la puissance AC totale autorisée en sortie.
-    switch (model(d)) {
-      case "DELTA_PRO":
-        return {
-          cmdCode: "WN511_SET_AC_OUT_PWR_PACK",
-          params: { outWatts: Math.round(watts) },
-        };
-      case "DELTA_MAX":
-      case "DELTA_2":
-      default:
-        return {
-          cmdCode: "AC_OUT_LIMIT_SET",
-          params: { outWatts: Math.round(watts) },
-        };
-    }
+  /**
+   * Sur Delta Max, on n'a pas de "discharge limit" via privé : la sortie
+   * AC est juste ON/OFF (cfgAcEnabled, id 66). On expose donc setOutputAc.
+   * setDischargeWatts est laissé en place pour les modèles qui le supportent.
+   */
+  setDischargeWatts(_d: Device, _watts: number): PrivateCmdSpec | null {
+    return null;
   },
-  setMaxChargeSoc(_d: Device, soc: number): CmdSpec {
+  setMaxChargeSoc(_d: Device, soc: number): PrivateCmdSpec {
     return {
-      cmdCode: "WN511_SET_CHG_HIGH_SOC",
-      params: { socMaxLimit: Math.round(soc) },
+      moduleType: 2,
+      operateType: "TCP",
+      params: { id: 49, maxChgSoc: Math.round(soc) },
     };
   },
-  setMinDischargeSoc(_d: Device, soc: number): CmdSpec {
+  setMinDischargeSoc(_d: Device, soc: number): PrivateCmdSpec {
     return {
-      cmdCode: "WN511_SET_DSG_LOW_SOC",
-      params: { socMinLimit: Math.round(soc) },
+      moduleType: 2,
+      operateType: "TCP",
+      params: { id: 51, minDsgSoc: Math.round(soc) },
     };
   },
-  setOutputAc(_d: Device, on: boolean): CmdSpec {
+  setOutputAc(_d: Device, on: boolean): PrivateCmdSpec {
     return {
-      cmdCode: "WN511_SET_AC_OUT",
-      params: { enabled: on ? 1 : 0 },
+      moduleType: 0,
+      operateType: "TCP",
+      params: { id: 66, enabled: on ? 1 : 0 },
     };
   },
 };

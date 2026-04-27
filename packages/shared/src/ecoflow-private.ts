@@ -239,9 +239,13 @@ export function publishEcoFlowPrivateCommand(
   },
 ): Promise<void> {
   const topic = `/app/${userId}/${sn}/thing/property/set`;
+  // Format validé sur Delta Max via tolwi/hassio-ecoflow-cloud :
+  //   - id est un STRING (séquence "999900000+random", pas un UUID)
+  //   - from = "HomeAssistant" (pas "iOS")
+  const seq = 999_900_000 + Math.floor(Math.random() * 90_000) + 10_000;
   const payload = JSON.stringify({
-    from: "iOS",
-    id: crypto.randomUUID(),
+    from: "HomeAssistant",
+    id: String(seq),
     version: "1.0",
     moduleType: body.moduleType,
     operateType: body.operateType,
