@@ -1707,6 +1707,36 @@ function FlowDiagram({ scenario }: { scenario: Scenario }) {
       <rect x="0" y="0" width={GEO.W} height={GEO.H} fill="url(#fd-grid)" />
       <rect x="0" y="0" width={GEO.W} height={GEO.H} fill="url(#fd-vignette)" />
 
+      {/* Périmètre maison : cadre pointillé qui englobe panneaux,
+          batterie et maison (= ce qui est derrière le compteur ENEDIS,
+          réseau exclu). */}
+      <g style={{ pointerEvents: "none" }}>
+        <rect
+          x={110}
+          y={35}
+          width={550}
+          height={500}
+          rx={20}
+          ry={20}
+          fill="none"
+          stroke="rgba(255,255,255,0.18)"
+          strokeWidth={1.4}
+          strokeDasharray="6 6"
+        />
+        <text
+          x={134}
+          y={56}
+          style={{
+            font: "600 10px ui-sans-serif, system-ui",
+            letterSpacing: "0.18em",
+            fill: "rgba(255,255,255,0.45)",
+            textTransform: "uppercase",
+          }}
+        >
+          Périmètre maison
+        </text>
+      </g>
+
       <FlowPath d={pSolarHome} color={FD.solar} power={solarToHome} />
       <FlowPath
         d={pGridHome}
