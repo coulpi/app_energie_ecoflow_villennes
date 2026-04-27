@@ -129,8 +129,12 @@ export interface PowerStreamCommand {
 export function createPowerStreamCommands(deviceSn: string): PowerStreamCommand {
   return {
     setPermanentWatts(watts) {
+      // Le PowerStream attend des dixièmes de W (cf DeciChargingPowerEntity
+      // dans tolwi/hassio-ecoflow-cloud : ival = int(value * 10)).
       const pdata = PermanentWatts.encode(
-        PermanentWatts.create({ permanent_watts: Math.max(0, Math.round(watts)) }),
+        PermanentWatts.create({
+          permanent_watts: Math.max(0, Math.round(watts * 10)),
+        }),
       ).finish();
       return buildEnvelope(deviceSn, CMD.PERMANENT_WATTS_PACK, pdata);
     },
