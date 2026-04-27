@@ -302,10 +302,22 @@ export default async function LoadsPage() {
                   <tr key={e.id.toString()} className="border-t border-zinc-900">
                     <td className="p-1.5">{e.profile?.name ?? "—"}</td>
                     <td className="p-1.5 font-mono">
-                      {e.startTs.toISOString().slice(5, 16).replace("T", " ")}
+                      {e.startTs.toLocaleString("fr-FR", {
+                        timeZone: "Europe/Paris",
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </td>
                     <td className="p-1.5 font-mono">
-                      {e.endTs.toISOString().slice(5, 16).replace("T", " ")}
+                      {e.endTs.toLocaleString("fr-FR", {
+                        timeZone: "Europe/Paris",
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </td>
                     <td className="p-1.5 text-right tabular-nums">
                       {e.durationMin} min

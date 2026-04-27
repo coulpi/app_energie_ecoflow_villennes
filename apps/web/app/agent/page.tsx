@@ -149,7 +149,14 @@ export default async function AgentPage() {
                   }
                 />
                 <span className="font-mono text-xs text-zinc-400">
-                  {r.ts.toISOString().slice(0, 19).replace("T", " ")}
+                  {r.ts.toLocaleString("fr-FR", {
+                    timeZone: "Europe/Paris",
+                    day: "2-digit",
+                    month: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
                 </span>
                 <span className="text-zinc-300">{r.trigger}</span>
                 <span className="text-zinc-500 text-xs">{r.model ?? "—"}</span>
