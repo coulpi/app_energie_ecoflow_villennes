@@ -24,6 +24,9 @@ const SURPLUS_HYST_W = 50;
 const CHARGE_RAMP_W_PER_TICK = 100;
 let deficitStartedAtMs: number | null = null;
 let lastOffAtMs: number | null = null;
+// Suit l'état précédent de la fenêtre tempo : on n'intervient sur la
+// priorité PowerStream que sur transition (in→out ou out→in).
+let lastInTempoWindow: boolean | null = null;
 
 export function getFollowLoadState(): {
   switchOn: boolean | null;
@@ -166,26 +169,12 @@ export async function tickFollowLoad(): Promise<void> {
   const offToOnLockMs = (ctrl.chargeOffToOnLockMin ?? 5) * 60_000;
   const soc = m.battery_soc;
 
-  // === Pilotage PowerStream : priorité auto selon SoC ===
-  // Si on a configuré un PowerStream et qu'on est en FOLLOW_LOAD :
-  // - SoC > minDischargeSoc : on peut décharger → priorité 0 (alimentation maison)
-  // - SoC <= minDischargeSoc : la batterie est trop basse → priorité 1
-  //   (stockage, on attend de recharger sur le surplus solaire).
-  if (ctrl.powerstreamSn) {
-    const wantPriority: 0 | 1 =
-      soc !== null && soc <= ctrl.minDischargeSoc ? 1 : 0;
-    try {
-      await setPowerstreamPriority(ctrl.powerstreamSn, wantPriority);
-    } catch (e) {
-      log.warn("follow-load: powerstream priority failed", {
-        error: (e as Error).message,
-      });
-    }
-  }
-
-  // === Décharge programmée (EDF Tempo) ===
-  // Pendant la fenêtre, on coupe la prise Tuya pour autoriser la décharge.
-  // La batterie sort librement vers la maison (Delta Max ne module pas).
+  // === Décharge programmée (EDF Tempo) + pilotage PowerStream ===
+  // On respecte le choix manuel de la priorité PowerStream sauf sur
+  // les transitions d'entrée/sortie de fenêtre tempo : à ces transitions
+  // on bascule automatiquement en alimentation (entrée) ou en stockage
+  // (sortie). Entre les transitions, l'utilisateur garde le contrôle.
+  let inWindow = false;
   if (ctrl.tempoEnabled) {
     const hour = new Date().getHours();
     const startHour =
@@ -195,10 +184,31 @@ export async function tickFollowLoad(): Promise<void> {
     const endHour = ctrl.tempoDischargeEndHour ?? 6;
     // Fenêtre [startHour, endHour). Si endHour <= startHour (ex. 22h → 6h),
     // la fenêtre traverse minuit.
-    const inWindow =
+    inWindow =
       endHour > startHour
         ? hour >= startHour && hour < endHour
         : hour >= startHour || hour < endHour;
+
+    // Transitions de fenêtre : on push la priorité PS uniquement quand
+    // l'état change, pour ne pas écraser un choix manuel utilisateur.
+    if (ctrl.powerstreamSn && inWindow !== lastInTempoWindow) {
+      const wantPriority: 0 | 1 = inWindow ? 0 : 1;
+      try {
+        await setPowerstreamPriority(ctrl.powerstreamSn, wantPriority);
+        log.info("follow-load: tempo transition, PS priority pushed", {
+          inWindow,
+          priority: wantPriority,
+        });
+      } catch (e) {
+        log.warn("follow-load: powerstream priority failed", {
+          error: (e as Error).message,
+        });
+      }
+    }
+    lastInTempoWindow = inWindow;
+
+    // Pendant la fenêtre tempo, on coupe la prise Tuya pour ne pas
+    // charger sur surplus pendant qu'on est censé décharger.
     if (inWindow && (soc === null || soc > ctrl.minDischargeSoc)) {
       log.info("follow-load: décharge programmée Tempo active", {
         tempoColor: ctrl.tempoColor,
