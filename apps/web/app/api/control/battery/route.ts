@@ -15,6 +15,7 @@ interface Body {
   tempoOtherDischargeHour?: number;
   tempoDischargeEndHour?: number;
   tempoDischargeTargetW?: number;
+  loadsBaselineW?: number | null;
 }
 
 export async function POST(req: Request) {
@@ -79,6 +80,17 @@ export async function POST(req: Request) {
     (data as Record<string, unknown>).tempoDischargeTargetW = Math.max(
       0,
       Math.min(2200, Math.round(body.tempoDischargeTargetW)),
+    );
+  }
+  if (body.loadsBaselineW === null) {
+    (data as Record<string, unknown>).loadsBaselineW = null;
+  } else if (
+    typeof body.loadsBaselineW === "number" &&
+    Number.isFinite(body.loadsBaselineW)
+  ) {
+    (data as Record<string, unknown>).loadsBaselineW = Math.max(
+      0,
+      Math.min(5000, Math.round(body.loadsBaselineW)),
     );
   }
   if (Object.keys(data).length === 0) {

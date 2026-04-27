@@ -157,14 +157,22 @@ export async function GET() {
     const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
     nightConsos.push(Math.max(0, p + g));
   }
-  if (nightConsos.length >= 30) {
-    baseW = Math.max(500, Math.min(1500, median(nightConsos)));
+  // Override manuel : si l'utilisateur a fixé loadsBaselineW dans
+  // ControlState, on l'utilise tel quel (court-circuite la détection auto).
+  const ctrl = (await prisma.controlState.findUnique({
+    where: { key: "default" },
+  })) as { loadsBaselineW?: number | null } | null;
+  const override = ctrl?.loadsBaselineW;
+  if (typeof override === "number" && override > 0) {
+    baseW = override;
+  } else if (nightConsos.length >= 30) {
+    baseW = Math.max(400, Math.min(1500, median(nightConsos)));
   } else if (powers.length >= 10) {
     // Pas assez de données nocturnes → fallback sur la fenêtre courte.
     const lo = percentile(powers, 0.1);
     const hi = percentile(powers, 0.7);
     const filtered = powers.filter((p) => p >= lo && p <= hi);
-    baseW = Math.max(650, Math.min(1500, median(filtered)));
+    baseW = Math.max(400, Math.min(1500, median(filtered)));
   } else {
     baseW = 700;
   }
@@ -199,6 +207,7 @@ export async function GET() {
       currentW: currentW !== null ? Math.round(currentW) : null,
       baseW: baseW !== null ? Math.round(baseW) : null,
       deltaW: deltaW !== null ? Math.round(deltaW) : null,
+      baselineOverride: typeof override === "number" ? override : null,
       profiles: profilesOut,
     },
     { headers: { "Cache-Control": "no-store" } },

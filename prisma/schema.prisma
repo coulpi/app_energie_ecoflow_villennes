@@ -239,6 +239,9 @@ model ControlState {
   tempoColor              String  @default("UNKNOWN")
   tempoColorTomorrow      String  @default("UNKNOWN")
   tempoLastFetchAt        DateTime?
+  // Baseline conso (W) utilisee pour la detection live d'appareils.
+  // Si null, calcul automatique (mediane nocturne 2h-5h sur 7j).
+  loadsBaselineW          Int?
   // SoC minimum auquel on s'autorise à décharger.
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.

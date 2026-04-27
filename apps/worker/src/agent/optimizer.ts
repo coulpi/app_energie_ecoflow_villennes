@@ -269,15 +269,21 @@ async function computeLiveLoads(
   const currentW =
     recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
 
+  // Override manuel via ControlState.loadsBaselineW si défini.
+  const ctrl = (await prisma.controlState.findUnique({
+    where: { key: "default" },
+  })) as { loadsBaselineW?: number | null } | null;
   let baseW: number | null = null;
-  if (powers.length >= 10) {
+  if (typeof ctrl?.loadsBaselineW === "number" && ctrl.loadsBaselineW > 0) {
+    baseW = ctrl.loadsBaselineW;
+  } else if (powers.length >= 10) {
     const sorted = [...powers].sort((a, b) => a - b);
     const p10 = sorted[Math.floor(sorted.length * 0.1)]!;
     const p70 = sorted[Math.floor(sorted.length * 0.7)]!;
     const filtered = sorted.filter((p) => p >= p10 && p <= p70);
     const med =
       filtered[Math.floor(filtered.length / 2)] ?? sorted[Math.floor(sorted.length / 2)]!;
-    baseW = Math.max(650, Math.min(1500, med));
+    baseW = Math.max(400, Math.min(1500, med));
   }
 
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;

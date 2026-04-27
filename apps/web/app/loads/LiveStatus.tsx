@@ -13,32 +13,55 @@ interface LivePayload {
   currentW: number | null;
   baseW: number | null;
   deltaW: number | null;
+  baselineOverride: number | null;
   profiles: LiveProfile[];
 }
 
 export function LiveSummary() {
   const [data, setData] = useState<LivePayload | null>(null);
+  const [editBase, setEditBase] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  const fetchOnce = async () => {
+    try {
+      const r = await fetch("/api/loads/live", { cache: "no-store" });
+      if (r.ok) setData(await r.json());
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
-    const fetchOnce = async () => {
-      try {
-        const r = await fetch("/api/loads/live", { cache: "no-store" });
-        if (r.ok && !cancelled) setData(await r.json());
-      } catch {
-        // ignore
-      }
+    const tick = async () => {
+      if (!cancelled) await fetchOnce();
     };
-    void fetchOnce();
-    const id = setInterval(fetchOnce, 15_000);
+    void tick();
+    const id = setInterval(tick, 15_000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
   }, []);
 
+  const applyBaseline = async (value: number | null) => {
+    setSaving(true);
+    try {
+      await fetch("/api/control/battery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loadsBaselineW: value }),
+      });
+      setEditBase("");
+      await fetchOnce();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!data) return null;
   const onCount = data.profiles.filter((p) => p.currentlyOn).length;
+  const overrideActive = data.baselineOverride !== null;
 
   return (
     <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 space-y-2">
@@ -60,6 +83,42 @@ export function LiveSummary() {
         {data.profiles.map((p) => (
           <ProfileBadge key={p.id} p={p} />
         ))}
+      </div>
+      <div className="flex items-center gap-2 pt-2 border-t border-zinc-900 text-xs flex-wrap">
+        <span className="text-zinc-500">Forcer plancher :</span>
+        <input
+          type="number"
+          min={0}
+          max={5000}
+          step={50}
+          placeholder={data.baseW?.toString() ?? "auto"}
+          value={editBase}
+          onChange={(e) => setEditBase(e.target.value)}
+          className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 w-24 font-mono text-zinc-200"
+        />
+        <button
+          type="button"
+          disabled={saving || editBase === ""}
+          onClick={() => applyBaseline(Number(editBase) || 0)}
+          className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 rounded px-3 py-1"
+        >
+          Fixer
+        </button>
+        {overrideActive && (
+          <>
+            <span className="text-amber-400">
+              ⚠ override actif : {data.baselineOverride} W
+            </span>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => applyBaseline(null)}
+              className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded px-3 py-1"
+            >
+              Remettre auto
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
