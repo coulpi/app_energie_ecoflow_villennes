@@ -1301,11 +1301,16 @@ function TodaySummary({ scenario }: { scenario: Scenario }) {
 function FlowDiagram({ scenario }: { scenario: Scenario }) {
   const { production, consumption, gridFlow, batteryFlow, batteryLevel } = scenario;
 
-  const solarToHome = Math.max(0, Math.min(production, consumption));
   const gridToHome = Math.max(0, gridFlow > 0 ? gridFlow : 0);
   const homeToGrid = Math.max(0, gridFlow < 0 ? -gridFlow : 0);
   const batteryToHome = Math.max(0, batteryFlow < 0 ? -batteryFlow : 0);
   const homeToBattery = Math.max(0, batteryFlow > 0 ? batteryFlow : 0);
+  // solar → maison : la maison est un nœud passif, ce qui entre = ce qui sort.
+  // Le flux solaire vers la maison est la somme effective des sorties (conso
+  // réelle + ce qui repart vers batterie/réseau) bornée par la production.
+  // Évite le flux fantôme quand la conso calculée par bilan tombe négative.
+  const homeOutflow = Math.max(0, consumption) + homeToBattery + homeToGrid;
+  const solarToHome = Math.max(0, Math.min(production, homeOutflow));
 
   const pSolarHome = curvePath(GEO.solar, GEO.home, 0);
   const pGridHome = curvePath(GEO.grid, GEO.home, 0.18);
