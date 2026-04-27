@@ -94,6 +94,9 @@ export interface DashboardSnapshot {
   tempoOtherDischargeHour: number | null;
   tempoDischargeEndHour: number | null;
   tempoDischargeTargetW: number | null;
+  powerstreamSn: string | null;
+  powerstreamPermanentW: number | null;
+  powerstreamPriority: number | null;
   tariffPeriod: string | null;
 }
 
@@ -245,6 +248,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       (ctrl as { tempoDischargeEndHour?: number } | null)?.tempoDischargeEndHour ?? null,
     tempoDischargeTargetW:
       (ctrl as { tempoDischargeTargetW?: number } | null)?.tempoDischargeTargetW ?? null,
+    powerstreamSn:
+      (ctrl as { powerstreamSn?: string } | null)?.powerstreamSn ?? null,
+    powerstreamPermanentW:
+      (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? null,
+    powerstreamPriority:
+      (ctrl as { powerstreamPriority?: number } | null)?.powerstreamPriority ?? null,
     tariffPeriod: null,
   };
 }

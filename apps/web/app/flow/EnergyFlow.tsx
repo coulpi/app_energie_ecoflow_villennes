@@ -19,6 +19,9 @@ interface FlowSnapshot {
   chargeOffsetW: number | null;
   chargeDeficitTimeoutMin: number | null;
   chargeOffToOnLockMin: number | null;
+  powerstreamSn: string | null;
+  powerstreamPermanentW: number | null;
+  powerstreamPriority: number | null;
   tempoEnabled: boolean | null;
   tempoColor: string | null;
   tempoColorTomorrow: string | null;
@@ -1409,6 +1412,32 @@ function BatteryControl({
           }}
         />
 
+        {snap.powerstreamSn && (
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: `1px solid ${C.border}`,
+            }}
+          >
+            <div
+              style={{
+                font: "600 9.5px ui-sans-serif, system-ui",
+                color: C.textDim,
+                letterSpacing: "0.14em",
+                marginBottom: 10,
+              }}
+            >
+              POWERSTREAM
+            </div>
+            <PowerStreamControls
+              sn={snap.powerstreamSn}
+              priority={snap.powerstreamPriority ?? 0}
+              permanentW={snap.powerstreamPermanentW ?? 0}
+            />
+          </div>
+        )}
+
         <div
           style={{
             marginTop: 14,
@@ -1632,6 +1661,169 @@ function ParamRow({
           {unit}
         </span>
       </div>
+    </div>
+  );
+}
+
+function PowerStreamControls({
+  sn,
+  priority,
+  permanentW,
+}: {
+  sn: string;
+  priority: number;
+  permanentW: number;
+}) {
+  const [busy, setBusy] = useState<"" | "supply" | "storage" | "watts">("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [watts, setWatts] = useState<number>(permanentW);
+
+  useEffect(() => setWatts(permanentW), [permanentW]);
+
+  const sendPriority = async (p: 0 | 1) => {
+    setBusy(p === 0 ? "supply" : "storage");
+    setMsg(null);
+    try {
+      const res = await fetch("/api/ecoflow/powerstream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sn, kind: "supplyPriority", priority: p }),
+      });
+      const j = await res.json();
+      setMsg(j.ok ? "✓ Mode appliqué" : `❌ ${j.error ?? "erreur"}`);
+      setTimeout(() => setMsg(null), 2500);
+    } catch (e) {
+      setMsg(`❌ ${(e as Error).message}`);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const sendWatts = async () => {
+    setBusy("watts");
+    setMsg(null);
+    try {
+      const res = await fetch("/api/ecoflow/powerstream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sn, kind: "permanentWatts", watts }),
+      });
+      const j = await res.json();
+      setMsg(j.ok ? `✓ ${watts} W appliqué` : `❌ ${j.error ?? "erreur"}`);
+      setTimeout(() => setMsg(null), 2500);
+    } catch (e) {
+      setMsg(`❌ ${(e as Error).message}`);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const isSupply = priority === 0;
+  const isStorage = priority === 1;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => sendPriority(0)}
+          disabled={busy !== ""}
+          style={{
+            flex: 1,
+            padding: "8px 10px",
+            borderRadius: 8,
+            font: "600 11px ui-sans-serif, system-ui",
+            letterSpacing: "0.06em",
+            color: isSupply ? C.battery : C.textDim,
+            background: isSupply ? `${C.battery}1a` : "transparent",
+            border: `1px solid ${isSupply ? C.battery : C.border}`,
+            cursor: busy ? "default" : "pointer",
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          {busy === "supply" ? "…" : "⚡ Alimentation"}
+        </button>
+        <button
+          type="button"
+          onClick={() => sendPriority(1)}
+          disabled={busy !== ""}
+          style={{
+            flex: 1,
+            padding: "8px 10px",
+            borderRadius: 8,
+            font: "600 11px ui-sans-serif, system-ui",
+            letterSpacing: "0.06em",
+            color: isStorage ? C.solar : C.textDim,
+            background: isStorage ? `${C.solar}1a` : "transparent",
+            border: `1px solid ${isStorage ? C.solar : C.border}`,
+            cursor: busy ? "default" : "pointer",
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          {busy === "storage" ? "…" : "🔋 Stockage"}
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          font: "500 11px ui-sans-serif, system-ui",
+          color: C.textDim,
+        }}
+      >
+        <span>Injection fixe :</span>
+        <input
+          type="number"
+          min={0}
+          max={800}
+          step={50}
+          value={watts}
+          onChange={(e) => setWatts(Math.round(Number(e.target.value) || 0))}
+          style={{
+            width: 70,
+            background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${C.border}`,
+            borderRadius: 6,
+            padding: "4px 6px",
+            color: C.text,
+            font: '500 12px "JetBrains Mono", ui-monospace, monospace',
+            textAlign: "right",
+          }}
+        />
+        <span style={{ fontSize: 10, color: C.textMute }}>W</span>
+        <button
+          type="button"
+          onClick={sendWatts}
+          disabled={busy !== ""}
+          style={{
+            marginLeft: "auto",
+            padding: "4px 12px",
+            borderRadius: 6,
+            font: "600 10px ui-sans-serif, system-ui",
+            letterSpacing: "0.08em",
+            color: C.text,
+            background: `${C.home}33`,
+            border: `1px solid ${C.home}`,
+            cursor: busy ? "default" : "pointer",
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          {busy === "watts" ? "…" : "ENVOYER"}
+        </button>
+      </div>
+
+      {msg && (
+        <div
+          style={{
+            font: "500 11px ui-sans-serif, system-ui",
+            color: msg.startsWith("✓") ? C.home : C.importRed,
+          }}
+        >
+          {msg}
+        </div>
+      )}
     </div>
   );
 }
