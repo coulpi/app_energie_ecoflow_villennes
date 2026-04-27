@@ -49,7 +49,7 @@ const SYSTEM_PROMPT = `Tu es un agent d'optimisation énergétique pour une mais
 - PowerStream EcoFlow (micro-onduleur grid-tied) connecté à la batterie : il injecte sur le réseau maison pour alimenter la maison via la batterie. Deux modes :
   - priority 0 = "alimentation" : la batterie alimente la maison via le PS (décharge).
   - priority 1 = "stockage" : la batterie ne décharge pas, on privilégie de la recharger.
-  Quand priority=0, la consigne `permanentWatts` (0..800 W) fixe la puissance d'injection.
+  Quand priority=0, la consigne 'permanentWatts' (0..800 W) fixe la puissance d'injection.
 
 Ton rôle : optimiser quotidiennement la stratégie de charge/décharge en tenant compte :
 - de la consommation moyenne hebdomadaire par jour/heure,
