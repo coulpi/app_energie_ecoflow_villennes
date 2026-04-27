@@ -114,15 +114,59 @@ export async function GET() {
   const currentW =
     recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
 
-  // Plancher : 10e..70e percentile pour ignorer les gros pics ponctuels.
-  // Borne min 650 W = conso de base nocturne observee chez l'utilisateur,
-  // borne max 1500 W pour eviter qu'un appareil permanent fasse deriver.
+  // Baseline nocturne : médiane des conso bilanées entre 2h-5h du matin
+  // sur les 7 derniers jours. Cette plage est dominée par les
+  // consommateurs permanents (frigo, box, veille) puisque les gros
+  // appareils (pompe, PAC, voiture) sont normalement OFF.
+  // Fallback : 700 W (observé chez l'utilisateur).
   let baseW: number | null = null;
-  if (powers.length >= 10) {
+  const sinceNight = new Date(Date.now() - 7 * 24 * 3_600_000);
+  const [prodNight, gridNight] = await Promise.all([
+    prisma.reading.findMany({
+      where: { deviceId: prodDev.id, ts: { gte: sinceNight }, powerW: { not: null } },
+      select: { ts: true, powerW: true },
+    }),
+    prisma.reading.findMany({
+      where: { deviceId: gridDev.id, ts: { gte: sinceNight }, powerW: { not: null } },
+      select: { ts: true, powerW: true },
+    }),
+  ]);
+  const nightBuckets = new Map<number, { p: number[]; g: number[] }>();
+  for (const r of prodNight) {
+    const h = r.ts.getHours();
+    if (h < 2 || h >= 5) continue;
+    if (r.powerW === null) continue;
+    const k = Math.floor(r.ts.getTime() / 60_000);
+    const b = nightBuckets.get(k) ?? { p: [], g: [] };
+    b.p.push(r.powerW);
+    nightBuckets.set(k, b);
+  }
+  for (const r of gridNight) {
+    const h = r.ts.getHours();
+    if (h < 2 || h >= 5) continue;
+    if (r.powerW === null) continue;
+    const k = Math.floor(r.ts.getTime() / 60_000);
+    const b = nightBuckets.get(k) ?? { p: [], g: [] };
+    b.g.push(r.powerW);
+    nightBuckets.set(k, b);
+  }
+  const nightConsos: number[] = [];
+  for (const [, b] of nightBuckets) {
+    if (b.p.length === 0 || b.g.length === 0) continue;
+    const p = b.p.reduce((a, x) => a + x, 0) / b.p.length;
+    const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
+    nightConsos.push(Math.max(0, p + g));
+  }
+  if (nightConsos.length >= 30) {
+    baseW = Math.max(500, Math.min(1500, median(nightConsos)));
+  } else if (powers.length >= 10) {
+    // Pas assez de données nocturnes → fallback sur la fenêtre courte.
     const lo = percentile(powers, 0.1);
     const hi = percentile(powers, 0.7);
     const filtered = powers.filter((p) => p >= lo && p <= hi);
     baseW = Math.max(650, Math.min(1500, median(filtered)));
+  } else {
+    baseW = 700;
   }
 
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;
