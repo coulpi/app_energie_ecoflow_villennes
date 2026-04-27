@@ -213,23 +213,59 @@ async function computeLiveLoads(
   summary: { currentW: number | null; baseW: number | null; deltaW: number | null } | null;
   profileMap: Map<string, { currentlyOn: boolean; confidence: number }>;
 }> {
-  const cons = await prisma.device.findFirst({
-    where: { enabled: true, role: "CONSUMPTION_METER" },
-  });
-  if (!cons) return { summary: null, profileMap: new Map() };
+  const [prodDev, gridDev] = await Promise.all([
+    prisma.device.findFirst({
+      where: { enabled: true, role: "PRODUCTION_METER" },
+    }),
+    prisma.device.findFirst({
+      where: { enabled: true, role: "GRID_METER" },
+    }),
+  ]);
+  if (!prodDev || !gridDev) return { summary: null, profileMap: new Map() };
 
   const since = new Date(Date.now() - 60 * 60_000);
-  const rows = await prisma.reading.findMany({
-    where: { deviceId: cons.id, ts: { gte: since }, powerW: { not: null } },
-    orderBy: { ts: "asc" },
-    select: { ts: true, powerW: true },
-  });
-  const powers = rows
-    .map((r) => Math.max(0, r.powerW ?? 0))
-    .filter((p) => p > 0);
-  const recents = rows
-    .filter((r) => r.ts.getTime() >= Date.now() - 2 * 60_000)
-    .map((r) => Math.max(0, r.powerW ?? 0));
+  const [prodRows, gridRows] = await Promise.all([
+    prisma.reading.findMany({
+      where: { deviceId: prodDev.id, ts: { gte: since }, powerW: { not: null } },
+      orderBy: { ts: "asc" },
+      select: { ts: true, powerW: true },
+    }),
+    prisma.reading.findMany({
+      where: { deviceId: gridDev.id, ts: { gte: since }, powerW: { not: null } },
+      orderBy: { ts: "asc" },
+      select: { ts: true, powerW: true },
+    }),
+  ]);
+
+  // Bilan : conso = prod + grid (signé), bucketé par minute.
+  const buckets = new Map<number, { p: number[]; g: number[] }>();
+  for (const r of prodRows) {
+    if (r.powerW === null) continue;
+    const k = Math.floor(r.ts.getTime() / 60_000);
+    const b = buckets.get(k) ?? { p: [], g: [] };
+    b.p.push(r.powerW);
+    buckets.set(k, b);
+  }
+  for (const r of gridRows) {
+    if (r.powerW === null) continue;
+    const k = Math.floor(r.ts.getTime() / 60_000);
+    const b = buckets.get(k) ?? { p: [], g: [] };
+    b.g.push(r.powerW);
+    buckets.set(k, b);
+  }
+  const consoSeries: { tsMin: number; w: number }[] = [];
+  for (const [k, b] of buckets) {
+    if (b.p.length === 0 || b.g.length === 0) continue;
+    const p = b.p.reduce((a, x) => a + x, 0) / b.p.length;
+    const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
+    consoSeries.push({ tsMin: k, w: Math.max(0, p + g) });
+  }
+  const powers = consoSeries.map((x) => x.w).filter((w) => w > 0);
+
+  const recentMinKey = Math.floor((Date.now() - 2 * 60_000) / 60_000);
+  const recents = consoSeries
+    .filter((x) => x.tsMin >= recentMinKey)
+    .map((x) => x.w);
   const currentW =
     recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
 
@@ -241,7 +277,7 @@ async function computeLiveLoads(
     const filtered = sorted.filter((p) => p >= p10 && p <= p70);
     const med =
       filtered[Math.floor(filtered.length / 2)] ?? sorted[Math.floor(sorted.length / 2)]!;
-    baseW = Math.max(200, Math.min(1500, med));
+    baseW = Math.max(650, Math.min(1500, med));
   }
 
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;

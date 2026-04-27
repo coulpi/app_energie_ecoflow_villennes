@@ -35,15 +35,24 @@ function percentile(arr: number[], p: number): number {
 }
 
 export async function GET() {
-  const cons = await prisma.device.findFirst({
-    where: { enabled: true, role: "CONSUMPTION_METER" as never },
-  });
+  // Conso bilanée : prod + grid (signé). Le Shelly CONSUMPTION_METER
+  // mesure souvent un sous-circuit et ignore les gros consommateurs
+  // sur d'autres tableaux (PAC, piscine). On reconstruit donc la
+  // série conso depuis production_meter + grid_meter, comme le snapshot.
+  const [prodDev, gridDev] = await Promise.all([
+    prisma.device.findFirst({
+      where: { enabled: true, role: "PRODUCTION_METER" as never },
+    }),
+    prisma.device.findFirst({
+      where: { enabled: true, role: "GRID_METER" as never },
+    }),
+  ]);
   const profiles = await prisma.loadProfile.findMany({
     where: { enabled: true },
     orderBy: { createdAt: "asc" },
   });
 
-  if (!cons) {
+  if (!prodDev || !gridDev) {
     return NextResponse.json({
       currentW: null,
       baseW: null,
@@ -59,29 +68,61 @@ export async function GET() {
   }
 
   const since = new Date(Date.now() - BASE_MIN * 60_000);
-  const rows = await prisma.reading.findMany({
-    where: { deviceId: cons.id, ts: { gte: since }, powerW: { not: null } },
-    orderBy: { ts: "asc" },
-    select: { ts: true, powerW: true },
-  });
-  const powers = rows
-    .map((r) => Math.max(0, r.powerW ?? 0))
-    .filter((p) => p > 0);
+  const [prodRows, gridRows] = await Promise.all([
+    prisma.reading.findMany({
+      where: { deviceId: prodDev.id, ts: { gte: since }, powerW: { not: null } },
+      orderBy: { ts: "asc" },
+      select: { ts: true, powerW: true },
+    }),
+    prisma.reading.findMany({
+      where: { deviceId: gridDev.id, ts: { gte: since }, powerW: { not: null } },
+      orderBy: { ts: "asc" },
+      select: { ts: true, powerW: true },
+    }),
+  ]);
 
-  const recentSince = Date.now() - RECENT_MIN * 60_000;
-  const recents = rows
-    .filter((r) => r.ts.getTime() >= recentSince)
-    .map((r) => Math.max(0, r.powerW ?? 0));
+  // Bucket par minute : moyenne prod, moyenne grid puis conso = prod + grid.
+  function bucket(rows: { ts: Date; powerW: number | null }[]) {
+    const map = new Map<number, number[]>();
+    for (const r of rows) {
+      if (r.powerW === null) continue;
+      const key = Math.floor(r.ts.getTime() / 60_000);
+      const a = map.get(key) ?? [];
+      a.push(r.powerW);
+      map.set(key, a);
+    }
+    const out = new Map<number, number>();
+    for (const [k, vs] of map) out.set(k, vs.reduce((a, b) => a + b, 0) / vs.length);
+    return out;
+  }
+  const prodB = bucket(prodRows);
+  const gridB = bucket(gridRows);
+  // Pour chaque minute on calcule conso = prod + grid (les deux signés).
+  const consoSeries: { tsMin: number; w: number }[] = [];
+  for (const [k, p] of prodB) {
+    const g = gridB.get(k);
+    if (g === undefined) continue;
+    consoSeries.push({ tsMin: k, w: Math.max(0, p + g) });
+  }
+  consoSeries.sort((a, b) => a.tsMin - b.tsMin);
+  const powers = consoSeries.map((x) => x.w).filter((w) => w > 0);
+
+  const recentMinKey = Math.floor((Date.now() - RECENT_MIN * 60_000) / 60_000);
+  const recents = consoSeries
+    .filter((x) => x.tsMin >= recentMinKey)
+    .map((x) => x.w);
   const currentW =
     recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
 
   // Plancher : 10e..70e percentile pour ignorer les gros pics ponctuels.
+  // Borne min 650 W = conso de base nocturne observee chez l'utilisateur,
+  // borne max 1500 W pour eviter qu'un appareil permanent fasse deriver.
   let baseW: number | null = null;
   if (powers.length >= 10) {
     const lo = percentile(powers, 0.1);
     const hi = percentile(powers, 0.7);
     const filtered = powers.filter((p) => p >= lo && p <= hi);
-    baseW = Math.max(200, Math.min(1500, median(filtered)));
+    baseW = Math.max(650, Math.min(1500, median(filtered)));
   }
 
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;
