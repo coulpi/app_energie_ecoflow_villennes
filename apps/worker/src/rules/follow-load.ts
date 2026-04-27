@@ -92,6 +92,18 @@ export async function tickFollowLoad(): Promise<void> {
   const m = await buildSnapshot();
   if (m.consumption_W === null || m.surplus_W === null) return;
 
+  // Resync : si l'état Tuya réel ne correspond pas à ce qu'on pense avoir
+  // appliqué (quelqu'un — agent, manuel, autre rule — a coupé la prise),
+  // on remet last.switchOn au réel pour que la décision suivante envoie
+  // bien la commande nécessaire.
+  if (m.switch_state !== null && m.switch_state !== last.switchOn) {
+    log.info("follow-load: resync prise (état Tuya différent du dernier état appliqué)", {
+      lastApplied: last.switchOn,
+      actualTuya: m.switch_state,
+    });
+    last.switchOn = m.switch_state;
+  }
+
   const chargeMinW = ctrl.chargeMinW ?? 400;
   const chargeMaxW = ctrl.chargeMaxW ?? 800;
   const chargeOffsetW = ctrl.chargeOffsetW ?? 100;
