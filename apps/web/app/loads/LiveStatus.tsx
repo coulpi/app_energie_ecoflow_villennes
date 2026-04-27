@@ -14,6 +14,9 @@ interface LivePayload {
   baseW: number | null;
   deltaW: number | null;
   baselineOverride: number | null;
+  baselineNightW: number | null;
+  baselineDayW: number | null;
+  baselineUsed: "night" | "day";
   profiles: LiveProfile[];
 }
 
@@ -84,7 +87,29 @@ export function LiveSummary() {
           <ProfileBadge key={p.id} p={p} />
         ))}
       </div>
-      <div className="flex items-center gap-2 pt-2 border-t border-zinc-900 text-xs flex-wrap">
+      <div className="flex items-center gap-3 pt-2 border-t border-zinc-900 text-xs flex-wrap text-zinc-500">
+        <span>Plancher auto utilisé :</span>
+        <span className="text-zinc-300">
+          {data.baselineUsed === "night" ? "nuit" : "jour"}
+        </span>
+        {data.baselineNightW !== null && (
+          <span>
+            nuit (2-5h, 7j) :{" "}
+            <span className="text-zinc-300 font-mono">
+              {data.baselineNightW} W
+            </span>
+          </span>
+        )}
+        {data.baselineDayW !== null && (
+          <span>
+            jour (8-22h p25, 7j) :{" "}
+            <span className="text-zinc-300 font-mono">
+              {data.baselineDayW} W
+            </span>
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 pt-2 text-xs flex-wrap">
         <span className="text-zinc-500">Forcer plancher :</span>
         <input
           type="number"

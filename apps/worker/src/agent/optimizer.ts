@@ -270,20 +270,67 @@ async function computeLiveLoads(
     recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
 
   // Override manuel via ControlState.loadsBaselineW si défini.
+  // Sinon, double baseline auto : médiane nocturne 2-5h vs p25 diurne
+  // 8-22h, sur 7 jours, on prend selon l'heure courante.
   const ctrl = (await prisma.controlState.findUnique({
     where: { key: "default" },
   })) as { loadsBaselineW?: number | null } | null;
   let baseW: number | null = null;
   if (typeof ctrl?.loadsBaselineW === "number" && ctrl.loadsBaselineW > 0) {
     baseW = ctrl.loadsBaselineW;
-  } else if (powers.length >= 10) {
-    const sorted = [...powers].sort((a, b) => a - b);
-    const p10 = sorted[Math.floor(sorted.length * 0.1)]!;
-    const p70 = sorted[Math.floor(sorted.length * 0.7)]!;
-    const filtered = sorted.filter((p) => p >= p10 && p <= p70);
-    const med =
-      filtered[Math.floor(filtered.length / 2)] ?? sorted[Math.floor(sorted.length / 2)]!;
-    baseW = Math.max(400, Math.min(1500, med));
+  } else {
+    const sinceWeek = new Date(Date.now() - 7 * 24 * 3_600_000);
+    const [pWeek, gWeek] = await Promise.all([
+      prisma.reading.findMany({
+        where: { deviceId: prodDev.id, ts: { gte: sinceWeek }, powerW: { not: null } },
+        select: { ts: true, powerW: true },
+      }),
+      prisma.reading.findMany({
+        where: { deviceId: gridDev.id, ts: { gte: sinceWeek }, powerW: { not: null } },
+        select: { ts: true, powerW: true },
+      }),
+    ]);
+    const ranges = [
+      { name: "night", filter: (h: number) => h >= 2 && h < 5 },
+      { name: "day", filter: (h: number) => h >= 8 && h < 22 },
+    ];
+    const series: Record<string, number[]> = { night: [], day: [] };
+    for (const range of ranges) {
+      const bk = new Map<number, { p: number[]; g: number[] }>();
+      const acc = (rows: typeof pWeek, field: "p" | "g") => {
+        for (const r of rows) {
+          if (r.powerW === null) continue;
+          if (!range.filter(r.ts.getHours())) continue;
+          const k = Math.floor(r.ts.getTime() / 60_000);
+          const b = bk.get(k) ?? { p: [], g: [] };
+          b[field].push(r.powerW);
+          bk.set(k, b);
+        }
+      };
+      acc(pWeek, "p");
+      acc(gWeek, "g");
+      for (const [, b] of bk) {
+        if (b.p.length === 0 || b.g.length === 0) continue;
+        const p = b.p.reduce((a, x) => a + x, 0) / b.p.length;
+        const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
+        series[range.name]!.push(Math.max(0, p + g));
+      }
+    }
+    const sortedNight = [...series.night!].sort((a, b) => a - b);
+    const sortedDay = [...series.day!].sort((a, b) => a - b);
+    const nightBase =
+      sortedNight.length >= 30 ? sortedNight[Math.floor(sortedNight.length * 0.5)]! : null;
+    const dayBase =
+      sortedDay.length >= 30 ? sortedDay[Math.floor(sortedDay.length * 0.25)]! : null;
+    const h = new Date().getHours();
+    const useNight = h < 6 || h >= 22;
+    const auto = useNight ? nightBase ?? dayBase : dayBase ?? nightBase;
+    if (auto !== null) {
+      baseW = Math.max(400, Math.min(2000, auto));
+    } else if (powers.length >= 10) {
+      const sorted = [...powers].sort((a, b) => a - b);
+      baseW = Math.max(400, Math.min(1500, sorted[Math.floor(sorted.length * 0.5)]!));
+    }
   }
 
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;

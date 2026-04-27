@@ -114,49 +114,67 @@ export async function GET() {
   const currentW =
     recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
 
-  // Baseline nocturne : médiane des conso bilanées entre 2h-5h du matin
-  // sur les 7 derniers jours. Cette plage est dominée par les
-  // consommateurs permanents (frigo, box, veille) puisque les gros
-  // appareils (pompe, PAC, voiture) sont normalement OFF.
-  // Fallback : 700 W (observé chez l'utilisateur).
+  // 2 baselines apprises sur 7 jours :
+  //  - nocturne : mediane 2h-5h du matin (rien ne tourne)
+  //  - diurne   : 25e percentile 8h-22h (capture les moments calmes
+  //               de journee, hors gros appareils typiquement actifs)
+  // On choisit selon l'heure courante : nocturne en [22-6], diurne sinon.
   let baseW: number | null = null;
-  const sinceNight = new Date(Date.now() - 7 * 24 * 3_600_000);
-  const [prodNight, gridNight] = await Promise.all([
+  const sinceWeek = new Date(Date.now() - 7 * 24 * 3_600_000);
+  const [prodWeek, gridWeek] = await Promise.all([
     prisma.reading.findMany({
-      where: { deviceId: prodDev.id, ts: { gte: sinceNight }, powerW: { not: null } },
+      where: { deviceId: prodDev.id, ts: { gte: sinceWeek }, powerW: { not: null } },
       select: { ts: true, powerW: true },
     }),
     prisma.reading.findMany({
-      where: { deviceId: gridDev.id, ts: { gte: sinceNight }, powerW: { not: null } },
+      where: { deviceId: gridDev.id, ts: { gte: sinceWeek }, powerW: { not: null } },
       select: { ts: true, powerW: true },
     }),
   ]);
-  const nightBuckets = new Map<number, { p: number[]; g: number[] }>();
-  for (const r of prodNight) {
-    const h = r.ts.getHours();
-    if (h < 2 || h >= 5) continue;
-    if (r.powerW === null) continue;
-    const k = Math.floor(r.ts.getTime() / 60_000);
-    const b = nightBuckets.get(k) ?? { p: [], g: [] };
-    b.p.push(r.powerW);
-    nightBuckets.set(k, b);
-  }
-  for (const r of gridNight) {
-    const h = r.ts.getHours();
-    if (h < 2 || h >= 5) continue;
-    if (r.powerW === null) continue;
-    const k = Math.floor(r.ts.getTime() / 60_000);
-    const b = nightBuckets.get(k) ?? { p: [], g: [] };
-    b.g.push(r.powerW);
-    nightBuckets.set(k, b);
-  }
-  const nightConsos: number[] = [];
-  for (const [, b] of nightBuckets) {
-    if (b.p.length === 0 || b.g.length === 0) continue;
-    const p = b.p.reduce((a, x) => a + x, 0) / b.p.length;
-    const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
-    nightConsos.push(Math.max(0, p + g));
-  }
+
+  // Buckets par minute, séparés en NIGHT (2-5h) et DAY (8-22h).
+  type Bucket = { p: number[]; g: number[] };
+  const nightBuckets = new Map<number, Bucket>();
+  const dayBuckets = new Map<number, Bucket>();
+  const accumulate = (
+    map: Map<number, Bucket>,
+    rows: typeof prodWeek,
+    field: "p" | "g",
+    hourFilter: (h: number) => boolean,
+  ) => {
+    for (const r of rows) {
+      if (r.powerW === null) continue;
+      if (!hourFilter(r.ts.getHours())) continue;
+      const k = Math.floor(r.ts.getTime() / 60_000);
+      const b = map.get(k) ?? { p: [], g: [] };
+      b[field].push(r.powerW);
+      map.set(k, b);
+    }
+  };
+  const isNight = (h: number) => h >= 2 && h < 5;
+  const isDay = (h: number) => h >= 8 && h < 22;
+  accumulate(nightBuckets, prodWeek, "p", isNight);
+  accumulate(nightBuckets, gridWeek, "g", isNight);
+  accumulate(dayBuckets, prodWeek, "p", isDay);
+  accumulate(dayBuckets, gridWeek, "g", isDay);
+
+  const seriesFromBuckets = (m: Map<number, Bucket>): number[] => {
+    const out: number[] = [];
+    for (const [, b] of m) {
+      if (b.p.length === 0 || b.g.length === 0) continue;
+      const p = b.p.reduce((a, x) => a + x, 0) / b.p.length;
+      const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
+      out.push(Math.max(0, p + g));
+    }
+    return out;
+  };
+  const nightConsos = seriesFromBuckets(nightBuckets);
+  const dayConsos = seriesFromBuckets(dayBuckets);
+  const nightBase = nightConsos.length >= 30 ? median(nightConsos) : null;
+  const dayBase = dayConsos.length >= 30 ? percentile(dayConsos, 0.25) : null;
+  const currentHour = new Date().getHours();
+  const useNight = currentHour < 6 || currentHour >= 22;
+  const autoBase = useNight ? nightBase ?? dayBase : dayBase ?? nightBase;
   // Override manuel : si l'utilisateur a fixé loadsBaselineW dans
   // ControlState, on l'utilise tel quel (court-circuite la détection auto).
   const ctrl = (await prisma.controlState.findUnique({
@@ -165,10 +183,10 @@ export async function GET() {
   const override = ctrl?.loadsBaselineW;
   if (typeof override === "number" && override > 0) {
     baseW = override;
-  } else if (nightConsos.length >= 30) {
-    baseW = Math.max(400, Math.min(1500, median(nightConsos)));
+  } else if (autoBase !== null) {
+    baseW = Math.max(400, Math.min(2000, autoBase));
   } else if (powers.length >= 10) {
-    // Pas assez de données nocturnes → fallback sur la fenêtre courte.
+    // Pas assez de données apprises → fallback sur la fenêtre courte.
     const lo = percentile(powers, 0.1);
     const hi = percentile(powers, 0.7);
     const filtered = powers.filter((p) => p >= lo && p <= hi);
@@ -208,6 +226,9 @@ export async function GET() {
       baseW: baseW !== null ? Math.round(baseW) : null,
       deltaW: deltaW !== null ? Math.round(deltaW) : null,
       baselineOverride: typeof override === "number" ? override : null,
+      baselineNightW: nightBase !== null ? Math.round(nightBase) : null,
+      baselineDayW: dayBase !== null ? Math.round(dayBase) : null,
+      baselineUsed: useNight ? "night" : "day",
       profiles: profilesOut,
     },
     { headers: { "Cache-Control": "no-store" } },
