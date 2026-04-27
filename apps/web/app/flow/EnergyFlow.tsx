@@ -801,29 +801,6 @@ function BatteryControl({
   const acOn = snap.switchOn === true;
   const acUnknown = snap.switchOn === null;
   const acPower = Math.max(0, Math.round(snap.acSwitchPowerW ?? 0));
-
-  // Compte à rebours basé sur followState + dérive locale.
-  const liveRemaining = (atMs: number, remainingMs: number | null): number | null => {
-    if (remainingMs === null) return null;
-    const drift = Date.now() - atMs;
-    return Math.max(0, remainingMs - drift);
-  };
-  const deficitMs = followState
-    ? liveRemaining(followState.fetchedAt, followState.deficit.remainingMs)
-    : null;
-  const offLockMs = followState
-    ? liveRemaining(followState.fetchedAt, followState.offLock.remainingMs)
-    : null;
-  const deficitActive =
-    followState?.deficit.active === true && deficitMs !== null && deficitMs > 0;
-  const offLockActive =
-    followState?.offLock.active === true && offLockMs !== null && offLockMs > 0;
-  const fmtCountdown = (ms: number) => {
-    const s = Math.floor(ms / 1000);
-    const m = Math.floor(s / 60);
-    const r = s % 60;
-    return `${m}:${String(r).padStart(2, "0")}`;
-  };
   const dischargeW = scenario.batteryFlow < 0 ? -scenario.batteryFlow : 0;
   const isFollowLoad = snap.controlMode === "FOLLOW_LOAD";
   const offset = snap.followLoadOffsetW ?? 0;
@@ -867,6 +844,30 @@ function BatteryControl({
     (FollowLoadState & { fetchedAt: number }) | null
   >(null);
   const [, setTick] = useState(0);
+
+  // Compte à rebours basé sur followState + dérive locale (déclaré APRÈS
+  // useState pour éviter une TDZ ReferenceError côté SSR minifié).
+  const liveRemaining = (atMs: number, remainingMs: number | null): number | null => {
+    if (remainingMs === null) return null;
+    const drift = Date.now() - atMs;
+    return Math.max(0, remainingMs - drift);
+  };
+  const deficitMs = followState
+    ? liveRemaining(followState.fetchedAt, followState.deficit.remainingMs)
+    : null;
+  const offLockMs = followState
+    ? liveRemaining(followState.fetchedAt, followState.offLock.remainingMs)
+    : null;
+  const deficitActive =
+    followState?.deficit.active === true && deficitMs !== null && deficitMs > 0;
+  const offLockActive =
+    followState?.offLock.active === true && offLockMs !== null && offLockMs > 0;
+  const fmtCountdown = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, "0")}`;
+  };
 
   // Re-sync depuis le snapshot tant que l'utilisateur n'a pas édité.
   useEffect(() => {
