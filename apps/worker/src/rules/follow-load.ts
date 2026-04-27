@@ -170,6 +170,31 @@ export async function tickFollowLoad(): Promise<void> {
   const offToOnLockMs = (ctrl.chargeOffToOnLockMin ?? 5) * 60_000;
   const soc = m.battery_soc;
 
+  // === Garde-fou SoC bas : on coupe la décharge PowerStream ===
+  // Si la batterie tombe au plancher minDischargeSoc, on force le PS
+  // en mode stockage (priority=1) pour empêcher toute décharge
+  // supplémentaire, même si la fenêtre tempo est active ou si
+  // l'utilisateur a manuellement choisi 'alimentation'. Cette garde
+  // est prioritaire sur tout le reste.
+  if (
+    ctrl.powerstreamSn &&
+    soc !== null &&
+    soc <= ctrl.minDischargeSoc &&
+    last.powerstreamPriority !== 1
+  ) {
+    try {
+      await setPowerstreamPriority(ctrl.powerstreamSn, 1);
+      log.info("follow-load: SoC plancher atteint, PS forcé en stockage", {
+        soc,
+        minDischargeSoc: ctrl.minDischargeSoc,
+      });
+    } catch (e) {
+      log.warn("follow-load: PS forced storage failed", {
+        error: (e as Error).message,
+      });
+    }
+  }
+
   // === Décharge programmée (EDF Tempo) + pilotage PowerStream ===
   // On respecte le choix manuel de la priorité PowerStream sauf sur
   // les transitions d'entrée/sortie de fenêtre tempo : à ces transitions
