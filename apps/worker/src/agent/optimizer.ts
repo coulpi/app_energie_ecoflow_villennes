@@ -321,7 +321,7 @@ async function computeLiveLoads(
     const nightBase =
       sortedNight.length >= 30 ? sortedNight[Math.floor(sortedNight.length * 0.5)]! : null;
     const dayBase =
-      sortedDay.length >= 30 ? sortedDay[Math.floor(sortedDay.length * 0.25)]! : null;
+      sortedDay.length >= 30 ? sortedDay[Math.floor(sortedDay.length * 0.5)]! : null;
     const h = new Date().getHours();
     const useNight = h < 6 || h >= 22;
     const auto = useNight ? nightBase ?? dayBase : dayBase ?? nightBase;

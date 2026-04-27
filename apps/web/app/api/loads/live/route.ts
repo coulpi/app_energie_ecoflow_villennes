@@ -171,7 +171,10 @@ export async function GET() {
   const nightConsos = seriesFromBuckets(nightBuckets);
   const dayConsos = seriesFromBuckets(dayBuckets);
   const nightBase = nightConsos.length >= 30 ? median(nightConsos) : null;
-  const dayBase = dayConsos.length >= 30 ? percentile(dayConsos, 0.25) : null;
+  // p50 (médiane) sur la fenêtre 8-22h : représente le "fond permanent"
+  // journée (frigo, box, ordis, multiprises). Ajusté empiriquement sur
+  // les données utilisateur qui rapporte 1000-1100 W de base journée.
+  const dayBase = dayConsos.length >= 30 ? percentile(dayConsos, 0.5) : null;
   const currentHour = new Date().getHours();
   const useNight = currentHour < 6 || currentHour >= 22;
   const autoBase = useNight ? nightBase ?? dayBase : dayBase ?? nightBase;
