@@ -227,6 +227,18 @@ model ControlState {
   // Verrou de redémarrage : durée minimale (minutes) pendant laquelle on
   // refuse de rallumer la prise après l'avoir coupée.
   chargeOffToOnLockMin    Int    @default(5)
+  // Décharge programmée selon la couleur EDF Tempo du jour : pendant la
+  // fenêtre, on coupe la prise Tuya et on laisse la batterie alimenter
+  // la maison. tempoColor (BLUE/WHITE/RED/UNKNOWN) est mis à jour par le
+  // poller, les heures sont les paramètres utilisateur.
+  tempoEnabled            Boolean @default(true)
+  tempoRedDischargeHour   Int     @default(17)
+  tempoOtherDischargeHour Int     @default(22)
+  tempoDischargeEndHour   Int     @default(6)
+  tempoDischargeTargetW   Int     @default(400)
+  tempoColor              String  @default("UNKNOWN")
+  tempoColorTomorrow      String  @default("UNKNOWN")
+  tempoLastFetchAt        DateTime?
   // SoC minimum auquel on s'autorise à décharger.
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.

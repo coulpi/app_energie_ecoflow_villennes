@@ -19,6 +19,13 @@ interface FlowSnapshot {
   chargeOffsetW: number | null;
   chargeDeficitTimeoutMin: number | null;
   chargeOffToOnLockMin: number | null;
+  tempoEnabled: boolean | null;
+  tempoColor: string | null;
+  tempoColorTomorrow: string | null;
+  tempoRedDischargeHour: number | null;
+  tempoOtherDischargeHour: number | null;
+  tempoDischargeEndHour: number | null;
+  tempoDischargeTargetW: number | null;
   ts: string;
 }
 
@@ -839,6 +846,21 @@ function BatteryControl({
   const [offLockTimeout, setOffLockTimeout] = useState<number>(
     snap.chargeOffToOnLockMin ?? 5,
   );
+  const [tempoEnabled, setTempoEnabled] = useState<boolean>(
+    snap.tempoEnabled ?? true,
+  );
+  const [tempoRedHour, setTempoRedHour] = useState<number>(
+    snap.tempoRedDischargeHour ?? 17,
+  );
+  const [tempoOtherHour, setTempoOtherHour] = useState<number>(
+    snap.tempoOtherDischargeHour ?? 22,
+  );
+  const [tempoEndHour, setTempoEndHour] = useState<number>(
+    snap.tempoDischargeEndHour ?? 6,
+  );
+  const [tempoTargetW, setTempoTargetW] = useState<number>(
+    snap.tempoDischargeTargetW ?? 400,
+  );
   const [saving, setSaving] = useState<"idle" | "saving" | "ok" | "err">("idle");
   const [dirty, setDirty] = useState(false);
   const [followState, setFollowState] = useState<
@@ -855,6 +877,11 @@ function BatteryControl({
       setChargeOffsetEdit(snap.chargeOffsetW ?? 100);
       setDeficitTimeout(snap.chargeDeficitTimeoutMin ?? 10);
       setOffLockTimeout(snap.chargeOffToOnLockMin ?? 5);
+      setTempoEnabled(snap.tempoEnabled ?? true);
+      setTempoRedHour(snap.tempoRedDischargeHour ?? 17);
+      setTempoOtherHour(snap.tempoOtherDischargeHour ?? 22);
+      setTempoEndHour(snap.tempoDischargeEndHour ?? 6);
+      setTempoTargetW(snap.tempoDischargeTargetW ?? 400);
     }
   }, [
     snap.followLoadMaxW,
@@ -863,6 +890,11 @@ function BatteryControl({
     snap.chargeOffsetW,
     snap.chargeDeficitTimeoutMin,
     snap.chargeOffToOnLockMin,
+    snap.tempoEnabled,
+    snap.tempoRedDischargeHour,
+    snap.tempoOtherDischargeHour,
+    snap.tempoDischargeEndHour,
+    snap.tempoDischargeTargetW,
     dirty,
   ]);
 
@@ -903,6 +935,11 @@ function BatteryControl({
           chargeOffsetW: chargeOffsetEdit,
           chargeDeficitTimeoutMin: deficitTimeout,
           chargeOffToOnLockMin: offLockTimeout,
+          tempoEnabled,
+          tempoRedDischargeHour: tempoRedHour,
+          tempoOtherDischargeHour: tempoOtherHour,
+          tempoDischargeEndHour: tempoEndHour,
+          tempoDischargeTargetW: tempoTargetW,
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -1264,6 +1301,107 @@ function BatteryControl({
             setDirty(true);
           }}
         />
+
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 12,
+            borderTop: `1px solid ${C.border}`,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 10,
+            }}
+          >
+            <span
+              style={{
+                font: "600 9.5px ui-sans-serif, system-ui",
+                color: C.textDim,
+                letterSpacing: "0.14em",
+              }}
+            >
+              DÉCHARGE PROGRAMMÉE · EDF TEMPO
+            </span>
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                cursor: "pointer",
+                font: "500 11px ui-sans-serif, system-ui",
+                color: C.text,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={tempoEnabled}
+                onChange={(e) => {
+                  setTempoEnabled(e.target.checked);
+                  setDirty(true);
+                }}
+                style={{ accentColor: C.home }}
+              />
+              actif
+            </label>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
+            <TempoBadge label="AUJOURD'HUI" color={snap.tempoColor} />
+            <TempoBadge label="DEMAIN" color={snap.tempoColorTomorrow} />
+          </div>
+
+          <ParamRow
+            label="Heure début · jour rouge"
+            color={C.importRed}
+            value={tempoRedHour}
+            unit="h"
+            onChange={(v) => {
+              setTempoRedHour(v);
+              setDirty(true);
+            }}
+          />
+          <ParamRow
+            label="Heure début · bleu/blanc"
+            color={C.grid}
+            value={tempoOtherHour}
+            unit="h"
+            onChange={(v) => {
+              setTempoOtherHour(v);
+              setDirty(true);
+            }}
+          />
+          <ParamRow
+            label="Heure de fin"
+            color={C.textDim}
+            value={tempoEndHour}
+            unit="h"
+            onChange={(v) => {
+              setTempoEndHour(v);
+              setDirty(true);
+            }}
+          />
+          <ParamRow
+            label="Puissance cible"
+            color={C.battery}
+            value={tempoTargetW}
+            onChange={(v) => {
+              setTempoTargetW(v);
+              setDirty(true);
+            }}
+          />
+        </div>
+
         <div
           style={{
             display: "flex",
@@ -1363,8 +1501,8 @@ function ParamRow({
         <input
           type="number"
           min={0}
-          max={unit === "min" ? 120 : 2200}
-          step={unit === "min" ? 1 : 50}
+          max={unit === "h" ? 23 : unit === "min" ? 120 : 2200}
+          step={unit === "h" || unit === "min" ? 1 : 50}
           value={value}
           onChange={(e) => onChange(Math.round(Number(e.target.value) || 0))}
           style={{
@@ -1387,6 +1525,56 @@ function ParamRow({
           {unit}
         </span>
       </div>
+    </div>
+  );
+}
+
+function TempoBadge({
+  label,
+  color,
+}: {
+  label: string;
+  color: string | null;
+}) {
+  const map: Record<string, { bg: string; fg: string; text: string }> = {
+    BLUE: { bg: "#1e3a8a", fg: "#bfdbfe", text: "BLEU" },
+    WHITE: { bg: "#e5e7eb", fg: "#111827", text: "BLANC" },
+    RED: { bg: "#991b1b", fg: "#fecaca", text: "ROUGE" },
+    UNKNOWN: { bg: "rgba(255,255,255,0.05)", fg: C.textMute, text: "—" },
+  };
+  const c = map[color ?? "UNKNOWN"] ?? map.UNKNOWN!;
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        padding: "8px 10px",
+        borderRadius: 10,
+        background: c.bg,
+        border: `1px solid ${c.fg}33`,
+      }}
+    >
+      <span
+        style={{
+          font: "600 9px ui-sans-serif, system-ui",
+          letterSpacing: "0.14em",
+          color: c.fg,
+          opacity: 0.7,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          font: "700 13px ui-sans-serif, system-ui",
+          letterSpacing: "0.08em",
+          color: c.fg,
+          marginTop: 2,
+        }}
+      >
+        {c.text}
+      </span>
     </div>
   );
 }

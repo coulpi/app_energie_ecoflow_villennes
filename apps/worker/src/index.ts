@@ -15,6 +15,7 @@ setGlobalDispatcher(
   }),
 );
 import { startTuyaPoller } from "./pollers/tuya.js";
+import { startTempoPoller } from "./pollers/tempo.js";
 import { startShellyPoller } from "./pollers/shelly.js";
 import { startEcoFlowMqtt, startEcoFlowPoller } from "./pollers/ecoflow.js";
 import { startRollupScheduler } from "./jobs/rollup.js";
@@ -31,6 +32,7 @@ async function main() {
   });
 
   startTuyaPoller(env.POLL_INTERVAL_SECONDS);
+  startTempoPoller();
   startShellyPoller(env.POLL_INTERVAL_SECONDS);
 
   try {

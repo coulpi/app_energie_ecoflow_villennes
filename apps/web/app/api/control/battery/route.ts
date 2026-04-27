@@ -10,6 +10,11 @@ interface Body {
   chargeOffsetW?: number;
   chargeDeficitTimeoutMin?: number;
   chargeOffToOnLockMin?: number;
+  tempoEnabled?: boolean;
+  tempoRedDischargeHour?: number;
+  tempoOtherDischargeHour?: number;
+  tempoDischargeEndHour?: number;
+  tempoDischargeTargetW?: number;
 }
 
 export async function POST(req: Request) {
@@ -49,6 +54,31 @@ export async function POST(req: Request) {
     data.chargeOffToOnLockMin = Math.max(
       0,
       Math.min(60, Math.round(body.chargeOffToOnLockMin)),
+    );
+  }
+  if (typeof body.tempoEnabled === "boolean") {
+    (data as Record<string, unknown>).tempoEnabled = body.tempoEnabled;
+  }
+  for (const key of [
+    "tempoRedDischargeHour",
+    "tempoOtherDischargeHour",
+    "tempoDischargeEndHour",
+  ] as const) {
+    const v = body[key];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      (data as Record<string, unknown>)[key] = Math.max(
+        0,
+        Math.min(23, Math.round(v)),
+      );
+    }
+  }
+  if (
+    typeof body.tempoDischargeTargetW === "number" &&
+    Number.isFinite(body.tempoDischargeTargetW)
+  ) {
+    (data as Record<string, unknown>).tempoDischargeTargetW = Math.max(
+      0,
+      Math.min(2200, Math.round(body.tempoDischargeTargetW)),
     );
   }
   if (Object.keys(data).length === 0) {

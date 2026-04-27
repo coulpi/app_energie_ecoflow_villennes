@@ -99,6 +99,11 @@ export async function tickFollowLoad(): Promise<void> {
         chargeOffsetW?: number | null;
         chargeDeficitTimeoutMin?: number | null;
         chargeOffToOnLockMin?: number | null;
+        tempoEnabled?: boolean | null;
+        tempoColor?: string | null;
+        tempoRedDischargeHour?: number | null;
+        tempoOtherDischargeHour?: number | null;
+        tempoDischargeEndHour?: number | null;
         minDischargeSoc: number;
         maxChargeSoc: number;
       }
@@ -126,6 +131,36 @@ export async function tickFollowLoad(): Promise<void> {
   const deficitTimeoutMs = (ctrl.chargeDeficitTimeoutMin ?? 10) * 60_000;
   const offToOnLockMs = (ctrl.chargeOffToOnLockMin ?? 5) * 60_000;
   const soc = m.battery_soc;
+
+  // === Décharge programmée (EDF Tempo) ===
+  // Pendant la fenêtre, on coupe la prise Tuya pour autoriser la décharge.
+  // La batterie sort librement vers la maison (Delta Max ne module pas).
+  if (ctrl.tempoEnabled) {
+    const hour = new Date().getHours();
+    const startHour =
+      ctrl.tempoColor === "RED"
+        ? (ctrl.tempoRedDischargeHour ?? 17)
+        : (ctrl.tempoOtherDischargeHour ?? 22);
+    const endHour = ctrl.tempoDischargeEndHour ?? 6;
+    // Fenêtre [startHour, endHour). Si endHour <= startHour (ex. 22h → 6h),
+    // la fenêtre traverse minuit.
+    const inWindow =
+      endHour > startHour
+        ? hour >= startHour && hour < endHour
+        : hour >= startHour || hour < endHour;
+    if (inWindow && (soc === null || soc > ctrl.minDischargeSoc)) {
+      log.info("follow-load: décharge programmée Tempo active", {
+        tempoColor: ctrl.tempoColor,
+        startHour,
+        endHour,
+      });
+      await setCharge(0);
+      await setSwitch(false);
+      await setDischarge(0);
+      return;
+    }
+  }
+
 
   const surplus = m.surplus_W; // > 0 = export, < 0 = import
   const alreadyCharging = last.switchOn === true;

@@ -87,6 +87,13 @@ export interface DashboardSnapshot {
   chargeOffsetW: number | null;
   chargeDeficitTimeoutMin: number | null;
   chargeOffToOnLockMin: number | null;
+  tempoEnabled: boolean | null;
+  tempoColor: string | null;
+  tempoColorTomorrow: string | null;
+  tempoRedDischargeHour: number | null;
+  tempoOtherDischargeHour: number | null;
+  tempoDischargeEndHour: number | null;
+  tempoDischargeTargetW: number | null;
   tariffPeriod: string | null;
 }
 
@@ -214,6 +221,18 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       (ctrl as { chargeDeficitTimeoutMin?: number } | null)?.chargeDeficitTimeoutMin ?? null,
     chargeOffToOnLockMin:
       (ctrl as { chargeOffToOnLockMin?: number } | null)?.chargeOffToOnLockMin ?? null,
+    tempoEnabled: (ctrl as { tempoEnabled?: boolean } | null)?.tempoEnabled ?? null,
+    tempoColor: (ctrl as { tempoColor?: string } | null)?.tempoColor ?? null,
+    tempoColorTomorrow:
+      (ctrl as { tempoColorTomorrow?: string } | null)?.tempoColorTomorrow ?? null,
+    tempoRedDischargeHour:
+      (ctrl as { tempoRedDischargeHour?: number } | null)?.tempoRedDischargeHour ?? null,
+    tempoOtherDischargeHour:
+      (ctrl as { tempoOtherDischargeHour?: number } | null)?.tempoOtherDischargeHour ?? null,
+    tempoDischargeEndHour:
+      (ctrl as { tempoDischargeEndHour?: number } | null)?.tempoDischargeEndHour ?? null,
+    tempoDischargeTargetW:
+      (ctrl as { tempoDischargeTargetW?: number } | null)?.tempoDischargeTargetW ?? null,
     tariffPeriod: null,
   };
 }
