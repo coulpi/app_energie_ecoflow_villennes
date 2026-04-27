@@ -102,7 +102,7 @@ export function LiveSummary() {
         )}
         {data.baselineDayW !== null && (
           <span>
-            jour (8-22h p25, 7j) :{" "}
+            jour (8-22h médiane, 7j) :{" "}
             <span className="text-zinc-300 font-mono">
               {data.baselineDayW} W
             </span>
