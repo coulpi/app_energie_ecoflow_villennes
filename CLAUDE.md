@@ -68,6 +68,21 @@ volontairement sur 60 min, premier ↔ dernier tick.
 - Tous les rôles `Device` sont des enums Prisma : `PRODUCTION_METER`,
   `CONSUMPTION_METER`, `GRID_METER`, `BATTERY`, `BATTERY_AC_SWITCH`.
 
+## Accès & déploiement
+
+- **Serveur** : 192.168.0.26 (LAN interne)
+- **SSH** : `ssh coulpi@192.168.0.26` (clé publique)
+- **Répertoire** : `/home/app_energie_ecoflow_villennes`
+- **Web UI** : http://192.168.0.26:3010 (port hôte 3010 → conteneur 3000)
+- **Repo** : https://github.com/coulpi/app_energie_ecoflow_villennes
+- **Déploiement** : push sur `main`, puis
+  ```bash
+  ssh coulpi@192.168.0.26 "cd /home/app_energie_ecoflow_villennes && bash ./scripts/deploy.sh"
+  ```
+  Le script fait `git fetch/reset --hard origin/main`, rebuild les images
+  Docker, redémarre `web` + `worker`, applique `prisma db push`.
+- **Logs** : `ssh coulpi@192.168.0.26 "cd /home/app_energie_ecoflow_villennes && docker compose logs -f web"` (ou `worker`).
+
 ## Commandes
 
 ```bash
