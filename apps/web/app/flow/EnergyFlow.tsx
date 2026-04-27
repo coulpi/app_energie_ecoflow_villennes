@@ -9,6 +9,12 @@ interface FlowSnapshot {
   batteryPowerW: number | null;
   batterySoc: number | null;
   switchOn: boolean | null;
+  acSwitchPowerW: number | null;
+  controlMode: string;
+  followLoadOffsetW: number | null;
+  followLoadMinW: number | null;
+  followLoadMaxW: number | null;
+  chargeMaxW: number | null;
   ts: string;
 }
 
@@ -232,6 +238,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <SelfConsumption scenario={scenario} />
+            <BatteryControl snap={snap} scenario={scenario} />
             <TodaySummary scenario={scenario} />
           </div>
         </div>
@@ -765,6 +772,427 @@ function SelfConsumption({ scenario }: { scenario: Scenario }) {
   );
 }
 
+// ── Battery control panel ───────────────────────────────────────────
+function BatteryControl({
+  snap,
+  scenario,
+}: {
+  snap: FlowSnapshot;
+  scenario: Scenario;
+}) {
+  const acOn = snap.switchOn === true;
+  const acUnknown = snap.switchOn === null;
+  const acPower = Math.max(0, Math.round(snap.acSwitchPowerW ?? 0));
+  const dischargeW = scenario.batteryFlow < 0 ? -scenario.batteryFlow : 0;
+  const isFollowLoad = snap.controlMode === "FOLLOW_LOAD";
+  const offset = snap.followLoadOffsetW ?? 0;
+  const minW = snap.followLoadMinW ?? 0;
+  const maxW = snap.followLoadMaxW ?? 0;
+  const target = Math.max(minW, Math.min(maxW, scenario.consumption - offset));
+  const range = Math.max(1, maxW - minW);
+  const actualPct = Math.min(1, Math.max(0, (dischargeW - minW) / range));
+  const targetPct = Math.min(1, Math.max(0, (target - minW) / range));
+
+  const [dischargeMax, setDischargeMax] = useState<number>(maxW);
+  const [chargeMax, setChargeMax] = useState<number>(snap.chargeMaxW ?? 800);
+  const [saving, setSaving] = useState<"idle" | "saving" | "ok" | "err">("idle");
+  const [dirty, setDirty] = useState(false);
+
+  // Re-sync depuis le snapshot tant que l'utilisateur n'a pas édité.
+  useEffect(() => {
+    if (!dirty) {
+      setDischargeMax(snap.followLoadMaxW ?? 800);
+      setChargeMax(snap.chargeMaxW ?? 800);
+    }
+  }, [snap.followLoadMaxW, snap.chargeMaxW, dirty]);
+
+  async function apply() {
+    setSaving("saving");
+    try {
+      const res = await fetch("/api/control/battery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          followLoadMaxW: dischargeMax,
+          chargeMaxW: chargeMax,
+        }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      setSaving("ok");
+      setDirty(false);
+      setTimeout(() => setSaving("idle"), 1400);
+    } catch {
+      setSaving("err");
+      setTimeout(() => setSaving("idle"), 1800);
+    }
+  }
+
+  const modeLabel: Record<string, string> = {
+    FOLLOW_LOAD: "Suivi de charge",
+    RULES: "Règles",
+    MANUAL: "Manuel",
+    OFF: "Désactivé",
+  };
+
+  return (
+    <div
+      style={{
+        background: `linear-gradient(180deg, ${C.panelHi}, ${C.panel})`,
+        border: `1px solid ${C.border}`,
+        borderRadius: 16,
+        padding: 18,
+      }}
+    >
+      <div
+        style={{
+          font: "600 9.5px ui-sans-serif, system-ui",
+          color: C.textDim,
+          letterSpacing: "0.14em",
+          marginBottom: 14,
+        }}
+      >
+        PILOTAGE BATTERIE
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 12px",
+          borderRadius: 10,
+          background: `${acOn ? C.battery : C.textMute}10`,
+          border: `1px solid ${acOn ? C.battery : C.borderHi}33`,
+          marginBottom: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Pulse color={acOn ? C.battery : C.textMute} size={6} />
+          <div>
+            <div
+              style={{
+                font: "600 10px ui-sans-serif, system-ui",
+                color: C.textDim,
+                letterSpacing: "0.12em",
+              }}
+            >
+              PRISE AC · CHARGE
+            </div>
+            <div
+              style={{
+                font: "500 12.5px ui-sans-serif, system-ui",
+                color: C.text,
+                marginTop: 2,
+              }}
+            >
+              {acUnknown
+                ? "Inconnu"
+                : acOn
+                  ? acPower > 5
+                    ? `Active · charge à ${fmtW(acPower)} ${unitFor(acPower)}`
+                    : "Active · veille"
+                  : "Inactive"}
+            </div>
+          </div>
+        </div>
+        <div
+          style={{
+            padding: "4px 10px",
+            borderRadius: 6,
+            font: "600 10px ui-sans-serif, system-ui",
+            letterSpacing: "0.14em",
+            color: acOn ? C.battery : C.textMute,
+            background: `${acOn ? C.battery : C.textMute}14`,
+            border: `1px solid ${acOn ? C.battery : C.textMute}33`,
+          }}
+        >
+          {acUnknown ? "—" : acOn ? "ON" : "OFF"}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            marginBottom: 6,
+          }}
+        >
+          <span
+            style={{
+              font: "600 10px ui-sans-serif, system-ui",
+              color: C.textDim,
+              letterSpacing: "0.12em",
+            }}
+          >
+            SORTIE VERS LA MAISON
+          </span>
+          <span
+            style={{
+              font: '600 16px "JetBrains Mono", ui-monospace, monospace',
+              color: dischargeW > 0 ? C.battery : C.textMute,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {fmtW(dischargeW)}
+            <span style={{ fontSize: 10, opacity: 0.7 }}> {unitFor(dischargeW)}</span>
+          </span>
+        </div>
+        <div
+          style={{
+            position: "relative",
+            height: 8,
+            borderRadius: 4,
+            background: "rgba(255,255,255,0.06)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${actualPct * 100}%`,
+              background: `linear-gradient(90deg, ${C.battery}55, ${C.battery})`,
+              boxShadow: `0 0 8px ${C.battery}77`,
+              transition: "width .8s cubic-bezier(.2,.7,.3,1)",
+            }}
+          />
+          {isFollowLoad && (
+            <div
+              style={{
+                position: "absolute",
+                top: -2,
+                bottom: -2,
+                left: `${targetPct * 100}%`,
+                width: 2,
+                background: C.home,
+                boxShadow: `0 0 6px ${C.home}`,
+                transform: "translateX(-1px)",
+              }}
+            />
+          )}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            font: "500 10px ui-sans-serif, system-ui",
+            color: C.textMute,
+            marginTop: 4,
+          }}
+        >
+          <span>{minW} W</span>
+          {isFollowLoad && (
+            <span style={{ color: C.home }}>
+              cible {Math.round(target)} W
+            </span>
+          )}
+          <span>{maxW} W</span>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingTop: 10,
+          borderTop: `1px solid ${C.border}`,
+          font: "500 11px ui-sans-serif, system-ui",
+          color: C.textDim,
+        }}
+      >
+        <span>Mode</span>
+        <span
+          style={{
+            padding: "3px 8px",
+            borderRadius: 6,
+            font: "600 10px ui-sans-serif, system-ui",
+            letterSpacing: "0.12em",
+            color: isFollowLoad ? C.home : C.textDim,
+            background: `${isFollowLoad ? C.home : C.textMute}14`,
+            border: `1px solid ${isFollowLoad ? C.home : C.textMute}33`,
+          }}
+        >
+          {modeLabel[snap.controlMode] ?? snap.controlMode}
+        </span>
+      </div>
+      {isFollowLoad && (
+        <div
+          style={{
+            marginTop: 8,
+            font: "400 11px ui-sans-serif, system-ui",
+            color: C.textMute,
+            lineHeight: 1.45,
+          }}
+        >
+          Ajustement automatique : conso − {offset} W, borné [{minW} W, {maxW} W].
+        </div>
+      )}
+
+      <div
+        style={{
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: `1px solid ${C.border}`,
+        }}
+      >
+        <div
+          style={{
+            font: "600 9.5px ui-sans-serif, system-ui",
+            color: C.textDim,
+            letterSpacing: "0.14em",
+            marginBottom: 10,
+          }}
+        >
+          PARAMÈTRES
+        </div>
+        <ParamRow
+          label="Sortie max → maison"
+          color={C.battery}
+          value={dischargeMax}
+          onChange={(v) => {
+            setDischargeMax(v);
+            setDirty(true);
+          }}
+        />
+        <ParamRow
+          label="Puissance de charge"
+          color={C.solar}
+          value={chargeMax}
+          onChange={(v) => {
+            setChargeMax(v);
+            setDirty(true);
+          }}
+        />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginTop: 10,
+            gap: 10,
+          }}
+        >
+          <span
+            style={{
+              font: "500 10.5px ui-sans-serif, system-ui",
+              color:
+                saving === "ok"
+                  ? C.home
+                  : saving === "err"
+                    ? C.importRed
+                    : C.textMute,
+            }}
+          >
+            {saving === "saving"
+              ? "Application…"
+              : saving === "ok"
+                ? "Appliqué ✓"
+                : saving === "err"
+                  ? "Erreur"
+                  : dirty
+                    ? "Modifications non appliquées"
+                    : ""}
+          </span>
+          <button
+            type="button"
+            onClick={apply}
+            disabled={!dirty || saving === "saving"}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 8,
+              border: `1px solid ${dirty ? C.home : C.border}`,
+              background: dirty ? `${C.home}1a` : "transparent",
+              color: dirty ? C.home : C.textMute,
+              font: "600 11px ui-sans-serif, system-ui",
+              letterSpacing: "0.08em",
+              cursor: dirty && saving !== "saving" ? "pointer" : "default",
+              opacity: dirty && saving !== "saving" ? 1 : 0.6,
+            }}
+          >
+            APPLIQUER
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParamRow({
+  label,
+  value,
+  onChange,
+  color,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  color: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "6px 0",
+      }}
+    >
+      <span
+        style={{
+          font: "500 11.5px ui-sans-serif, system-ui",
+          color: C.text,
+        }}
+      >
+        {label}
+      </span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "rgba(255,255,255,0.04)",
+          border: `1px solid ${C.border}`,
+          borderRadius: 8,
+          padding: "4px 6px",
+        }}
+      >
+        <input
+          type="number"
+          min={0}
+          max={2200}
+          step={50}
+          value={value}
+          onChange={(e) => onChange(Math.round(Number(e.target.value) || 0))}
+          style={{
+            width: 64,
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            color,
+            font: '600 14px "JetBrains Mono", ui-monospace, monospace',
+            textAlign: "right",
+            letterSpacing: "-0.01em",
+          }}
+        />
+        <span
+          style={{
+            font: '500 10px "JetBrains Mono", ui-monospace, monospace',
+            color: C.textMute,
+          }}
+        >
+          W
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Today summary ───────────────────────────────────────────────────
 function TodaySummary({ scenario }: { scenario: Scenario }) {
   const produced = ((scenario.production / 1000) * 7.4 + 4).toFixed(1);
@@ -895,7 +1323,7 @@ function FlowDiagram({ scenario }: { scenario: Scenario }) {
       <FlowPath d={pSolarHome} color={FD.solar} power={solarToHome} />
       <FlowPath d={pSolarBattery} color={FD.solar} power={solarToBattery} />
       <FlowPath d={pSolarGrid} color={FD.solar} power={solarToGrid} />
-      <FlowPath d={pGridHome} color={FD.importRed} power={gridToHome} reverse />
+      <FlowPath d={pGridHome} color={FD.importRed} power={gridToHome} />
       <FlowPath d={pBatteryHome} color={FD.battery} power={batteryToHome} />
 
       <Node

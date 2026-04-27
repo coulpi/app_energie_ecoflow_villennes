@@ -10,6 +10,7 @@ async function saveControl(formData: FormData) {
     followLoadOffsetW: Number(formData.get("offsetW") ?? 50),
     followLoadMinW: Number(formData.get("minW") ?? 0),
     followLoadMaxW: Number(formData.get("maxW") ?? 800),
+    chargeMaxW: Number(formData.get("chargeMaxW") ?? 800),
     minDischargeSoc: Number(formData.get("minSoc") ?? 20),
     maxChargeSoc: Number(formData.get("maxSoc") ?? 95),
   };
@@ -30,6 +31,7 @@ export default async function ControlPage() {
     followLoadOffsetW: 50,
     followLoadMinW: 0,
     followLoadMaxW: 800,
+    chargeMaxW: 800,
     minDischargeSoc: 20,
     maxChargeSoc: 95,
   };
@@ -89,6 +91,15 @@ export default async function ControlPage() {
               name="maxW"
               type="number"
               defaultValue={c.followLoadMaxW}
+              className="bg-zinc-800 rounded px-3 py-2 w-32"
+            />
+          </label>
+          <label className="flex items-center justify-between gap-4">
+            <span>Puissance de charge (W)</span>
+            <input
+              name="chargeMaxW"
+              type="number"
+              defaultValue={(c as { chargeMaxW?: number }).chargeMaxW ?? 800}
               className="bg-zinc-800 rounded px-3 py-2 w-32"
             />
           </label>

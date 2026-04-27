@@ -215,6 +215,8 @@ model ControlState {
   // Bornes d'injection appliquées en mode FOLLOW_LOAD.
   followLoadMinW     Int         @default(0)
   followLoadMaxW     Int         @default(800)
+  // Puissance de charge AC max (W) appliquée à la batterie via setChargeWatts.
+  chargeMaxW         Int         @default(800)
   // SoC minimum auquel on s'autorise à décharger.
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.

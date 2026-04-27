@@ -77,7 +77,12 @@ export interface DashboardSnapshot {
   batterySoc: number | null;
   batteryPowerW: number | null;
   switchOn: boolean | null;
+  acSwitchPowerW: number | null;
   controlMode: string;
+  followLoadOffsetW: number | null;
+  followLoadMinW: number | null;
+  followLoadMaxW: number | null;
+  chargeMaxW: number | null;
   tariffPeriod: string | null;
 }
 
@@ -193,7 +198,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     batterySoc: bat?.soc ?? null,
     batteryPowerW,
     switchOn: sw?.switchOn ?? null,
+    acSwitchPowerW: sw?.powerW ?? null,
     controlMode: ctrl?.mode ?? "RULES",
+    followLoadOffsetW: ctrl?.followLoadOffsetW ?? null,
+    followLoadMinW: ctrl?.followLoadMinW ?? null,
+    followLoadMaxW: ctrl?.followLoadMaxW ?? null,
+    chargeMaxW: (ctrl as { chargeMaxW?: number } | null)?.chargeMaxW ?? null,
     tariffPeriod: null,
   };
 }
