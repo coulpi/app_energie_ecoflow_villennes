@@ -160,12 +160,20 @@ export default async function AgentPage() {
                     "text-xs px-2 py-0.5 rounded " +
                     (r.error
                       ? "bg-rose-900/40 text-rose-300"
-                      : r.applied
-                        ? "bg-emerald-900/40 text-emerald-300"
-                        : "bg-zinc-800 text-zinc-400")
+                      : r.trigger === "demo"
+                        ? "bg-violet-900/40 text-violet-300"
+                        : r.applied
+                          ? "bg-emerald-900/40 text-emerald-300"
+                          : "bg-zinc-800 text-zinc-400")
                   }
                 >
-                  {r.error ? "erreur" : r.applied ? "appliqué" : "n/a"}
+                  {r.error
+                    ? "erreur"
+                    : r.trigger === "demo"
+                      ? "démo"
+                      : r.applied
+                        ? "appliqué"
+                        : "n/a"}
                 </span>
               </summary>
               <pre className="mt-3 text-xs text-zinc-400 overflow-x-auto">

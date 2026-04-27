@@ -192,12 +192,14 @@ export function startHttpServer(): http.Server {
       }
 
       if (req.method === "POST" && url.pathname === "/run") {
-        const result = await runAgent("manual");
+        const dryRun = url.searchParams.get("dryRun") === "1";
+        const result = await runAgent(dryRun ? "demo" : "manual", { dryRun });
         res.writeHead(200);
         res.end(
           JSON.stringify({
             id: result.id.toString(),
             applied: result.applied,
+            dryRun,
             error: result.error,
           }),
         );

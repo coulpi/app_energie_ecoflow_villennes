@@ -278,10 +278,12 @@ function clamp(x: number, lo: number, hi: number): number {
 }
 
 export async function runAgent(
-  trigger: "schedule" | "manual" = "schedule",
+  trigger: "schedule" | "manual" | "demo" = "schedule",
+  opts: { dryRun?: boolean } = {},
 ): Promise<{ id: bigint; applied: boolean; error?: string }> {
   const start = Date.now();
   const settings = await loadSettings();
+  const dryRun = opts.dryRun === true || trigger === "demo";
 
   if (trigger === "schedule" && !settings.enabled) {
     return { id: 0n, applied: false, error: "agent disabled" };
@@ -323,10 +325,12 @@ export async function runAgent(
     let applied = false;
     let appliedJson: unknown = null;
 
-    if (proposal) {
+    if (proposal && !dryRun) {
       const result = await applyProposal(proposal);
       applied = result.controlUpdated || result.rulesReplaced > 0;
       appliedJson = result;
+    } else if (proposal && dryRun) {
+      appliedJson = { dryRun: true };
     }
 
     await prisma.agentRun.update({

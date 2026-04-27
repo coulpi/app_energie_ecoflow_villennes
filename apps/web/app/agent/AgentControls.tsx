@@ -57,40 +57,58 @@ export function ModelSelect({ defaultModel }: { defaultModel: string }) {
 }
 
 export function RunNowButton() {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"" | "real" | "demo">("");
   const [result, setResult] = useState<string | null>(null);
 
-  const onClick = async () => {
-    setBusy(true);
+  const run = async (dryRun: boolean) => {
+    setBusy(dryRun ? "demo" : "real");
     setResult(null);
     try {
-      const r = await fetch("/api/agent/run", { method: "POST" });
-      const j = (await r.json()) as { applied?: boolean; error?: string };
+      const r = await fetch(
+        `/api/agent/run${dryRun ? "?dryRun=1" : ""}`,
+        { method: "POST" },
+      );
+      const j = (await r.json()) as {
+        applied?: boolean;
+        dryRun?: boolean;
+        error?: string;
+      };
       setResult(
         j.error
           ? `❌ ${j.error}`
-          : j.applied
-            ? "✓ Appliqué"
-            : "✓ Terminé (rien à appliquer)",
+          : j.dryRun
+            ? "✓ Démo : proposition générée (non appliquée)"
+            : j.applied
+              ? "✓ Appliqué"
+              : "✓ Terminé (rien à appliquer)",
       );
-      setTimeout(() => window.location.reload(), 800);
+      setTimeout(() => window.location.reload(), 1200);
     } catch (e) {
       setResult(`❌ ${(e as Error).message}`);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3 flex-wrap">
       {result && <span className="text-xs text-zinc-400">{result}</span>}
       <button
         type="button"
-        onClick={onClick}
-        disabled={busy}
+        onClick={() => run(true)}
+        disabled={busy !== ""}
+        className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded px-4 py-2 text-sm"
+        title="Génère une proposition sans rien appliquer"
+      >
+        {busy === "demo" ? "Analyse démo…" : "Tester en démo"}
+      </button>
+      <button
+        type="button"
+        onClick={() => run(false)}
+        disabled={busy !== ""}
         className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 rounded px-4 py-2 text-sm"
       >
-        {busy ? "Analyse en cours…" : "Lancer maintenant"}
+        {busy === "real" ? "Analyse en cours…" : "Lancer maintenant"}
       </button>
     </div>
   );

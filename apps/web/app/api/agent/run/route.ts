@@ -5,14 +5,19 @@ export const dynamic = "force-dynamic";
 
 const WORKER = process.env.WORKER_INTERNAL_URL ?? "http://worker:3100";
 
-export async function POST() {
+export async function POST(req: Request) {
   ensureFetchConfigured();
+  const url = new URL(req.url);
+  const dryRun = url.searchParams.get("dryRun") === "1";
   try {
-    const r = await fetch(`${WORKER}/run`, {
-      method: "POST",
-      cache: "no-store",
-      signal: AbortSignal.timeout(1810_000),
-    });
+    const r = await fetch(
+      `${WORKER}/run${dryRun ? "?dryRun=1" : ""}`,
+      {
+        method: "POST",
+        cache: "no-store",
+        signal: AbortSignal.timeout(1810_000),
+      },
+    );
     const json = await r.json();
     return NextResponse.json(json, { status: r.status });
   } catch (e) {
