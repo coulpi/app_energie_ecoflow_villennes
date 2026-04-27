@@ -237,6 +237,10 @@ model ControlState {
   tempoOtherDischargeHour Int     @default(22)
   tempoDischargeEndHour   Int     @default(6)
   tempoDischargeTargetW   Int     @default(400)
+  // Temps (en minutes) avant la fin de la fenetre tempo pendant lequel
+  // on rallume la prise AC IN pour reveiller la batterie de sa veille
+  // profonde, afin qu'elle soit prete a charger des l'aube solaire.
+  tempoWakeupBeforeMin    Int     @default(15)
   tempoColor              String  @default("UNKNOWN")
   tempoColorTomorrow      String  @default("UNKNOWN")
   tempoLastFetchAt        DateTime?

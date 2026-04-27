@@ -140,6 +140,7 @@ export async function tickFollowLoad(): Promise<void> {
         tempoRedDischargeHour?: number | null;
         tempoOtherDischargeHour?: number | null;
         tempoDischargeEndHour?: number | null;
+        tempoWakeupBeforeMin?: number | null;
         powerstreamSn?: string | null;
         minDischargeSoc: number;
         maxChargeSoc: number;
@@ -209,15 +210,45 @@ export async function tickFollowLoad(): Promise<void> {
 
     // Pendant la fenêtre tempo, on coupe la prise Tuya pour ne pas
     // charger sur surplus pendant qu'on est censé décharger.
+    // Exception : pré-réveil avant la fin de fenêtre. La Delta Max
+    // entre en veille profonde après plusieurs heures sans charge AC ;
+    // on rallume la prise X minutes avant endHour pour qu'elle soit
+    // prête à charger dès que le surplus solaire arrive.
     if (inWindow && (soc === null || soc > ctrl.minDischargeSoc)) {
-      log.info("follow-load: décharge programmée Tempo active", {
-        tempoColor: ctrl.tempoColor,
-        startHour,
-        endHour,
-      });
-      await setCharge(0);
-      await setSwitch(false);
-      await setDischarge(0);
+      const now = new Date();
+      const minutesNow = now.getHours() * 60 + now.getMinutes();
+      const endMinutes = endHour * 60;
+      const wakeupBefore = (ctrl.tempoWakeupBeforeMin ?? 15);
+      // Distance jusqu'à la fin (positive si on s'en approche dans la même
+      // journée, gestion fenêtre traversant minuit en convertissant tout en
+      // minutes since startHour modulo 24h).
+      const distanceToEnd = (() => {
+        if (endHour > startHour) return endMinutes - minutesNow;
+        // Fenêtre traverse minuit : on est soit après startHour soit avant endHour.
+        if (minutesNow >= startHour * 60) {
+          return 24 * 60 - minutesNow + endMinutes;
+        }
+        return endMinutes - minutesNow;
+      })();
+      const inWakeupWindow = distanceToEnd >= 0 && distanceToEnd <= wakeupBefore;
+
+      if (inWakeupWindow) {
+        log.info("follow-load: tempo wakeup window — réveil batterie", {
+          minutesUntilEnd: distanceToEnd,
+        });
+        await setCharge(0);
+        await setSwitch(true); // rallume la prise pour réveil
+        await setDischarge(0);
+      } else {
+        log.info("follow-load: décharge programmée Tempo active", {
+          tempoColor: ctrl.tempoColor,
+          startHour,
+          endHour,
+        });
+        await setCharge(0);
+        await setSwitch(false);
+        await setDischarge(0);
+      }
       return;
     }
   }

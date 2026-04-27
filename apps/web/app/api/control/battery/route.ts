@@ -15,6 +15,7 @@ interface Body {
   tempoOtherDischargeHour?: number;
   tempoDischargeEndHour?: number;
   tempoDischargeTargetW?: number;
+  tempoWakeupBeforeMin?: number;
   loadsBaselineW?: number | null;
 }
 
@@ -80,6 +81,15 @@ export async function POST(req: Request) {
     (data as Record<string, unknown>).tempoDischargeTargetW = Math.max(
       0,
       Math.min(2200, Math.round(body.tempoDischargeTargetW)),
+    );
+  }
+  if (
+    typeof body.tempoWakeupBeforeMin === "number" &&
+    Number.isFinite(body.tempoWakeupBeforeMin)
+  ) {
+    (data as Record<string, unknown>).tempoWakeupBeforeMin = Math.max(
+      0,
+      Math.min(120, Math.round(body.tempoWakeupBeforeMin)),
     );
   }
   if (body.loadsBaselineW === null) {

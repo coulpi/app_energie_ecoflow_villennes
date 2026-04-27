@@ -94,6 +94,7 @@ export interface DashboardSnapshot {
   tempoOtherDischargeHour: number | null;
   tempoDischargeEndHour: number | null;
   tempoDischargeTargetW: number | null;
+  tempoWakeupBeforeMin: number | null;
   powerstreamSn: string | null;
   powerstreamPermanentW: number | null;
   powerstreamPriority: number | null;
@@ -264,6 +265,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       (ctrl as { tempoDischargeEndHour?: number } | null)?.tempoDischargeEndHour ?? null,
     tempoDischargeTargetW:
       (ctrl as { tempoDischargeTargetW?: number } | null)?.tempoDischargeTargetW ?? null,
+    tempoWakeupBeforeMin:
+      (ctrl as { tempoWakeupBeforeMin?: number } | null)?.tempoWakeupBeforeMin ?? null,
     powerstreamSn:
       (ctrl as { powerstreamSn?: string } | null)?.powerstreamSn ?? null,
     powerstreamPermanentW:

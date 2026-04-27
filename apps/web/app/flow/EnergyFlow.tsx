@@ -29,6 +29,7 @@ interface FlowSnapshot {
   tempoOtherDischargeHour: number | null;
   tempoDischargeEndHour: number | null;
   tempoDischargeTargetW: number | null;
+  tempoWakeupBeforeMin: number | null;
   ts: string;
 }
 

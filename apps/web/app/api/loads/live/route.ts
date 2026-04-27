@@ -81,13 +81,10 @@ export async function GET() {
     }),
   ]);
 
-  // Bucket par minute : moyenne prod, moyenne grid puis conso = prod + grid + powerstream.
-  // (Le PowerStream injecte sur le réseau maison, il réduit l'import sans réduire
-  // la conso physique. On ajoute donc sa puissance d'injection courante au bilan.)
-  const ctrlForPs = (await prisma.controlState.findUnique({
-    where: { key: "default" },
-  })) as { powerstreamPermanentW?: number } | null;
-  const psNow = ctrlForPs?.powerstreamPermanentW ?? 0;
+  // Pour la détection d'appareils on prend la conso "vue par le compteur"
+  // = prod + grid (sans le PowerStream). La baseline est apprise quand le
+  // PS n'injecte pas encore, donc l'ajouter fausserait le delta de la
+  // valeur d'injection PS et masquerait les appareils détectables.
   function bucket(rows: { ts: Date; powerW: number | null }[]) {
     const map = new Map<number, number[]>();
     for (const r of rows) {
@@ -108,10 +105,7 @@ export async function GET() {
   for (const [k, p] of prodB) {
     const g = gridB.get(k);
     if (g === undefined) continue;
-    // psNow est appliqué uniformément à la série récente (approximation :
-    // on ne stocke pas l'historique d'injection PowerStream tick par tick).
-    // Pour la baseline historique (jour/nuit) ce biais reste limité.
-    consoSeries.push({ tsMin: k, w: Math.max(0, p + g + psNow) });
+    consoSeries.push({ tsMin: k, w: Math.max(0, p + g) });
   }
   consoSeries.sort((a, b) => a.tsMin - b.tsMin);
   const powers = consoSeries.map((x) => x.w).filter((w) => w > 0);
