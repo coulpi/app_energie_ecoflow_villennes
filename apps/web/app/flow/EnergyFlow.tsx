@@ -1268,16 +1268,12 @@ function FlowDiagram({ scenario }: { scenario: Scenario }) {
   const { production, consumption, gridFlow, batteryFlow, batteryLevel } = scenario;
 
   const solarToHome = Math.max(0, Math.min(production, consumption));
-  const solarToBattery = Math.max(
-    0,
-    batteryFlow > 0 ? Math.min(batteryFlow, production - solarToHome) : 0,
-  );
   const solarToGrid = Math.max(0, gridFlow < 0 ? -gridFlow : 0);
   const gridToHome = Math.max(0, gridFlow > 0 ? gridFlow : 0);
   const batteryToHome = Math.max(0, batteryFlow < 0 ? -batteryFlow : 0);
+  const homeToBattery = Math.max(0, batteryFlow > 0 ? batteryFlow : 0);
 
   const pSolarHome = curvePath(GEO.solar, GEO.home, 0);
-  const pSolarBattery = curvePath(GEO.solar, GEO.battery, -0.22);
   const pSolarGrid = curvePath(GEO.solar, GEO.grid, 0.22);
   const pGridHome = curvePath(GEO.grid, GEO.home, 0.18);
   const pBatteryHome = curvePath(GEO.battery, GEO.home, -0.18);
@@ -1321,10 +1317,14 @@ function FlowDiagram({ scenario }: { scenario: Scenario }) {
       <rect x="0" y="0" width={GEO.W} height={GEO.H} fill="url(#fd-vignette)" />
 
       <FlowPath d={pSolarHome} color={FD.solar} power={solarToHome} />
-      <FlowPath d={pSolarBattery} color={FD.solar} power={solarToBattery} />
       <FlowPath d={pSolarGrid} color={FD.solar} power={solarToGrid} />
       <FlowPath d={pGridHome} color={FD.importRed} power={gridToHome} />
-      <FlowPath d={pBatteryHome} color={FD.battery} power={batteryToHome} />
+      <FlowPath
+        d={pBatteryHome}
+        color={FD.battery}
+        power={Math.max(batteryToHome, homeToBattery)}
+        reverse={homeToBattery > 0}
+      />
 
       <Node
         cx={GEO.solar.x}
