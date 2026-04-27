@@ -19,6 +19,30 @@ const BATTERY_CAPACITY_WH = 2016; // Delta Max 2000
  *     écoulé, donne une moyenne de puissance entre ces deux ticks. C'est
  *     la valeur la moins bruyante qu'on puisse extraire d'un signal entier.
  */
+/**
+ * Si le dernier reading BATTERY n'a pas de SoC (le BMS Delta Max ne pousse
+ * pas systématiquement la valeur à chaque tick MQTT), on remonte jusqu'à
+ * 6h en arrière pour trouver la dernière valeur connue. Évite que
+ * l'affichage tombe à 0 % entre 2 broadcasts BMS.
+ */
+async function stickyBatterySoc(current: number | null): Promise<number | null> {
+  if (current !== null) return current;
+  const battery = await prisma.device.findFirst({
+    where: { enabled: true, role: "BATTERY" as never },
+  });
+  if (!battery) return null;
+  const last = await prisma.reading.findFirst({
+    where: {
+      deviceId: battery.id,
+      soc: { not: null },
+      ts: { gte: new Date(Date.now() - 6 * 3_600_000) },
+    },
+    orderBy: { ts: "desc" },
+    select: { soc: true },
+  });
+  return last?.soc ?? null;
+}
+
 async function estimateBatteryFromSocDrift(): Promise<number | null> {
   const now = Date.now();
   const since = new Date(now - 60 * 60_000);
@@ -242,7 +266,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     consumptionW,
     gridW,
     surplusW,
-    batterySoc: bat?.soc ?? null,
+    batterySoc: await stickyBatterySoc(bat?.soc ?? null),
     batteryPowerW,
     switchOn: sw?.switchOn ?? null,
     acSwitchPowerW: sw?.powerW ?? null,
