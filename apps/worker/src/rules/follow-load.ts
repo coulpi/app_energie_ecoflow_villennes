@@ -46,13 +46,34 @@ interface AppliedState {
   chargeW: number | null;
   dischargeW: number | null;
   acOutputOn: boolean | null;
+  /** PowerStream supply priority : 0 = alim maison, 1 = stockage. */
+  powerstreamPriority: 0 | 1 | null;
 }
 const last: AppliedState = {
   switchOn: null,
   chargeW: null,
   dischargeW: null,
   acOutputOn: null,
+  powerstreamPriority: null,
 };
+
+async function setPowerstreamPriority(
+  sn: string,
+  priority: 0 | 1,
+): Promise<void> {
+  if (last.powerstreamPriority === priority) return;
+  const { publishPowerStreamCommand } = await import("../pollers/ecoflow.js");
+  await publishPowerStreamCommand(sn, { kind: "supplyPriority", priority });
+  await prisma.controlState.update({
+    where: { key: "default" },
+    data: { powerstreamPriority: priority } as never,
+  });
+  last.powerstreamPriority = priority;
+  log.info("follow-load: powerstream priority", {
+    priority,
+    label: priority === 0 ? "alimentation" : "stockage",
+  });
+}
 
 async function setAcOutput(on: boolean): Promise<void> {
   if (last.acOutputOn === on) return;
@@ -116,6 +137,7 @@ export async function tickFollowLoad(): Promise<void> {
         tempoRedDischargeHour?: number | null;
         tempoOtherDischargeHour?: number | null;
         tempoDischargeEndHour?: number | null;
+        powerstreamSn?: string | null;
         minDischargeSoc: number;
         maxChargeSoc: number;
       }
@@ -143,6 +165,23 @@ export async function tickFollowLoad(): Promise<void> {
   const deficitTimeoutMs = (ctrl.chargeDeficitTimeoutMin ?? 10) * 60_000;
   const offToOnLockMs = (ctrl.chargeOffToOnLockMin ?? 5) * 60_000;
   const soc = m.battery_soc;
+
+  // === Pilotage PowerStream : priorité auto selon SoC ===
+  // Si on a configuré un PowerStream et qu'on est en FOLLOW_LOAD :
+  // - SoC > minDischargeSoc : on peut décharger → priorité 0 (alimentation maison)
+  // - SoC <= minDischargeSoc : la batterie est trop basse → priorité 1
+  //   (stockage, on attend de recharger sur le surplus solaire).
+  if (ctrl.powerstreamSn) {
+    const wantPriority: 0 | 1 =
+      soc !== null && soc <= ctrl.minDischargeSoc ? 1 : 0;
+    try {
+      await setPowerstreamPriority(ctrl.powerstreamSn, wantPriority);
+    } catch (e) {
+      log.warn("follow-load: powerstream priority failed", {
+        error: (e as Error).message,
+      });
+    }
+  }
 
   // === Décharge programmée (EDF Tempo) ===
   // Pendant la fenêtre, on coupe la prise Tuya pour autoriser la décharge.

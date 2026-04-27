@@ -185,10 +185,18 @@ export function startHttpServer(): http.Server {
               kind: "permanentWatts",
               watts: body.watts ?? 0,
             });
+            await prisma.controlState.update({
+              where: { key: "default" },
+              data: { powerstreamPermanentW: body.watts ?? 0 } as never,
+            });
           } else if (body.kind === "supplyPriority") {
             await publishPowerStreamCommand(body.sn, {
               kind: "supplyPriority",
               priority: (body.priority ?? 0) as 0 | 1,
+            });
+            await prisma.controlState.update({
+              where: { key: "default" },
+              data: { powerstreamPriority: body.priority ?? 0 } as never,
             });
           } else if (body.kind === "batUpper") {
             await publishPowerStreamCommand(body.sn, {

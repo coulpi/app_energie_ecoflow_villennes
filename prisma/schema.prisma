@@ -23,6 +23,7 @@ enum DeviceRole {
   GRID_METER          // compteur bidirectionnel (signé : + import, - export)
   BATTERY_AC_SWITCH
   BATTERY
+  POWERSTREAM         // micro-onduleur EcoFlow PowerStream (injection grid-tied)
 }
 
 enum RuleActionStatus {
@@ -242,6 +243,13 @@ model ControlState {
   // Baseline conso (W) utilisee pour la detection live d'appareils.
   // Si null, calcul automatique (mediane nocturne 2h-5h sur 7j).
   loadsBaselineW          Int?
+  // PowerStream EcoFlow : SN + dernière puissance d'injection appliquée.
+  // permanentWatts est la consigne 'mode manuel' (0 = mode AUTO).
+  powerstreamSn           String?
+  powerstreamPermanentW   Int     @default(0)
+  // 0 = privilegier l'alimentation (decharge maison),
+  // 1 = privilegier le stockage (charge batterie).
+  powerstreamPriority     Int     @default(0)
   // SoC minimum auquel on s'autorise à décharger.
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.

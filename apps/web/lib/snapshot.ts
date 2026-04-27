@@ -195,23 +195,21 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   }
 
   // Conso maison = ce qui passe physiquement au point de livraison
-  //   consumption = production + grid_signed
-  // (gridW > 0 = import → la maison consomme prod + import ;
-  //  gridW < 0 = export → la maison consomme prod − export.)
-  // La batterie étant branchée sur un circuit maison via la prise AC,
-  // sa charge fait PARTIE de cette conso (elle apparaît au compteur).
-  // On NE déduit PAS la batterie : si la prise AC tire 587 W, c'est
-  // bien 587 W qui passent par la maison.
+  //   consumption = production + grid_signed + powerstream_output
+  // (le PowerStream injecte sur le réseau maison depuis la batterie ; il
+  //  réduit l'import grid sans réduire la conso physique réelle, on doit
+  //  donc le rajouter au bilan).
+  const psW = (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? 0;
   if (productionW !== null && gridW !== null) {
-    consumptionW = productionW + gridW;
+    consumptionW = productionW + gridW + psW;
   } else if (measuredConsumptionW !== null) {
     consumptionW = measuredConsumptionW;
   }
   if (productionW === null && consumptionW !== null && gridW !== null) {
-    productionW = Math.max(0, consumptionW - gridW);
+    productionW = Math.max(0, consumptionW - gridW - psW);
   }
   if (gridW === null && productionW !== null && consumptionW !== null) {
-    gridW = consumptionW - productionW;
+    gridW = consumptionW - productionW - psW;
   }
 
   return {
