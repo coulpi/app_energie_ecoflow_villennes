@@ -86,8 +86,23 @@ const GEO = {
   grid: { x: 820, y: 380, r: 54 },
 } as const;
 
+interface SeriesPayload {
+  production: number[];
+  consumption: number[];
+  grid: number[];
+  battery: number[];
+}
+interface TodaySummaryData {
+  producedWh: number;
+  consumedWh: number;
+  exportedWh: number;
+  savedEur: number;
+}
+
 export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
   const [snap, setSnap] = useState<FlowSnapshot>(initial);
+  const [series, setSeries] = useState<SeriesPayload | null>(null);
+  const [today, setToday] = useState<TodaySummaryData | null>(null);
 
   useEffect(() => {
     const tick = async () => {
@@ -99,6 +114,34 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
       }
     };
     const id = setInterval(tick, POLL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const fetchSeries = async () => {
+      try {
+        const res = await fetch("/api/sparklines?minutes=60&buckets=30", {
+          cache: "no-store",
+        });
+        if (res.ok) setSeries(await res.json());
+      } catch {
+        // ignore
+      }
+    };
+    const fetchToday = async () => {
+      try {
+        const res = await fetch("/api/today-summary", { cache: "no-store" });
+        if (res.ok) setToday(await res.json());
+      } catch {
+        // ignore
+      }
+    };
+    void fetchSeries();
+    void fetchToday();
+    const id = setInterval(() => {
+      void fetchSeries();
+      void fetchToday();
+    }, 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -146,6 +189,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
             label="PRODUCTION SOLAIRE"
             color={C.solar}
             sparkSeed={3}
+            sparkData={series?.production}
             value={fmtW(scenario.production)}
             unit={unitFor(scenario.production)}
             active={scenario.production > 0}
@@ -156,6 +200,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
             label="CONSOMMATION MAISON"
             color={C.home}
             sparkSeed={11}
+            sparkData={series?.consumption}
             value={fmtW(scenario.consumption)}
             unit={unitFor(scenario.consumption)}
             active={scenario.consumption > 0}
@@ -166,6 +211,8 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
             label={scenario.gridFlow >= 0 ? "IMPORT RÉSEAU" : "EXPORT RÉSEAU"}
             color={scenario.gridFlow > 0 ? C.importRed : C.grid}
             sparkSeed={17}
+            sparkData={series?.grid}
+            sparkSigned
             value={fmtW(Math.abs(scenario.gridFlow))}
             unit={unitFor(scenario.gridFlow)}
             active={Math.abs(scenario.gridFlow) > 0}
@@ -182,6 +229,8 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
             label="NIVEAU BATTERIE"
             color={C.battery}
             sparkSeed={23}
+            sparkData={series?.battery}
+            sparkSigned
             value={String(scenario.batteryLevel)}
             unit="%"
             active={true}
@@ -257,7 +306,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <SelfConsumption scenario={scenario} />
             <BatteryControl snap={snap} scenario={scenario} />
-            <TodaySummary scenario={scenario} />
+            <TodaySummary today={today} />
           </div>
         </div>
 
@@ -582,6 +631,8 @@ function KpiCard({
   sub,
   active,
   sparkSeed,
+  sparkData,
+  sparkSigned,
   icon,
 }: {
   label: string;
@@ -591,6 +642,8 @@ function KpiCard({
   sub: string;
   active: boolean;
   sparkSeed: number;
+  sparkData?: number[];
+  sparkSigned?: boolean;
   icon: ReactNode;
 }) {
   return (
@@ -660,7 +713,14 @@ function KpiCard({
             {label}
           </div>
         </div>
-        <Sparkline color={color} seed={sparkSeed} height={26} width={70} />
+        <Sparkline
+          color={color}
+          seed={sparkSeed}
+          data={sparkData}
+          signed={sparkSigned}
+          height={26}
+          width={70}
+        />
       </div>
 
       <div style={{ marginTop: 12, display: "flex", alignItems: "baseline", gap: 6 }}>
@@ -1581,11 +1641,11 @@ function TempoBadge({
 }
 
 // ── Today summary ───────────────────────────────────────────────────
-function TodaySummary({ scenario }: { scenario: Scenario }) {
-  const produced = ((scenario.production / 1000) * 7.4 + 4).toFixed(1);
-  const consumed = ((scenario.consumption / 1000) * 9 + 6).toFixed(1);
-  const exported = Math.max(0, +produced - +consumed).toFixed(1);
-  const saved = (+produced * 0.18).toFixed(2);
+function TodaySummary({ today }: { today: TodaySummaryData | null }) {
+  const produced = today ? (today.producedWh / 1000).toFixed(1) : "—";
+  const consumed = today ? (today.consumedWh / 1000).toFixed(1) : "—";
+  const exported = today ? (today.exportedWh / 1000).toFixed(1) : "—";
+  const saved = today ? today.savedEur.toFixed(2) : "—";
   const items = [
     { k: "Produit", v: produced, u: "kWh", c: C.solar },
     { k: "Consommé", v: consumed, u: "kWh", c: C.home },
@@ -2202,21 +2262,45 @@ function Sparkline({
   seed = 1,
   height = 36,
   width = 120,
+  data,
+  signed = false,
 }: {
   color: string;
   seed?: number;
   height?: number;
   width?: number;
+  data?: number[];
+  signed?: boolean;
 }) {
-  const N = 28;
+  const N = data && data.length >= 2 ? data.length : 28;
   const pts: [number, number][] = [];
-  let v = 0.5;
-  let r = seed;
-  for (let i = 0; i < N; i++) {
-    r = (r * 9301 + 49297) % 233280;
-    const noise = (r / 233280 - 0.5) * 0.35;
-    v = Math.max(0.08, Math.min(0.92, v + noise));
-    pts.push([(i / (N - 1)) * width, height - v * height]);
+  if (data && data.length >= 2) {
+    // Normalisation : signed = zéro au milieu (utile pour grid + signé) ;
+    // sinon on borne entre min(0,…) et max(50,…) pour rester lisible
+    // même quand la série est plate.
+    let lo: number, hi: number;
+    if (signed) {
+      const m = Math.max(1, ...data.map((v) => Math.abs(v)));
+      lo = -m;
+      hi = m;
+    } else {
+      lo = Math.min(0, ...data);
+      hi = Math.max(50, ...data);
+    }
+    const span = hi - lo || 1;
+    for (let i = 0; i < N; i++) {
+      const v = (data[i]! - lo) / span;
+      pts.push([(i / (N - 1)) * width, height - v * height]);
+    }
+  } else {
+    let v = 0.5;
+    let r = seed;
+    for (let i = 0; i < N; i++) {
+      r = (r * 9301 + 49297) % 233280;
+      const noise = (r / 233280 - 0.5) * 0.35;
+      v = Math.max(0.08, Math.min(0.92, v + noise));
+      pts.push([(i / (N - 1)) * width, height - v * height]);
+    }
   }
   const d = pts
     .map((p, i) =>
