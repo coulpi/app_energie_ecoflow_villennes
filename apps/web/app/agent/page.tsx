@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { ModelSelect, RunNowButton } from "./AgentControls";
+import { ProposalView } from "./ProposalView";
 
 export const dynamic = "force-dynamic";
 
@@ -176,9 +177,19 @@ export default async function AgentPage() {
                         : "n/a"}
                 </span>
               </summary>
-              <pre className="mt-3 text-xs text-zinc-400 overflow-x-auto">
-                {r.error ?? JSON.stringify(r.proposal, null, 2) ?? "—"}
-              </pre>
+              <div className="mt-3">
+                {r.error ? (
+                  <pre className="text-xs text-rose-300 overflow-x-auto">
+                    {r.error}
+                  </pre>
+                ) : r.proposal ? (
+                  <ProposalView
+                    proposal={r.proposal as Parameters<typeof ProposalView>[0]["proposal"]}
+                  />
+                ) : (
+                  <span className="text-xs text-zinc-500">—</span>
+                )}
+              </div>
             </details>
           ))}
         </div>
