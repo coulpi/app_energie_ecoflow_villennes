@@ -141,6 +141,22 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     batteryPowerW = -sw.powerW;
   }
 
+  // (0bis) Décharge via PowerStream : si on a une consigne d'injection
+  // active (priority = 0 / alimentation, permanentW > 0), on utilise cette
+  // consigne comme valeur stable pour batteryPowerW. Le BMS ne pousse pas
+  // régulièrement la valeur de décharge AC, ce qui fait clignoter
+  // l'affichage entre 0 W et la vraie valeur. Cette consigne est ce que
+  // le PS injecte physiquement, donc une bonne approximation.
+  const psWatts = (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? 0;
+  const psPriority = (ctrl as { powerstreamPriority?: number } | null)?.powerstreamPriority ?? 0;
+  if (psPriority === 0 && psWatts > 30) {
+    // Décharge en cours : valeur >= consigne PS (la batterie peut décharger
+    // un peu plus si le BMS le voit, sinon on stabilise à la consigne).
+    if (batteryPowerW === null || batteryPowerW < psWatts - 30) {
+      batteryPowerW = psWatts;
+    }
+  }
+
   // 1) Si l'API privée (BMS) ne donne rien, on tente le bilan énergétique.
   if (
     batteryPowerW === null &&
