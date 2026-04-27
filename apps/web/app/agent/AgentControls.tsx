@@ -6,6 +6,7 @@ export function ModelSelect({ defaultModel }: { defaultModel: string }) {
   const [models, setModels] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(defaultModel);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,11 +33,12 @@ export function ModelSelect({ defaultModel }: { defaultModel: string }) {
     <>
       <select
         name="model"
-        defaultValue={defaultModel}
+        value={selected}
+        onChange={(e) => setSelected(e.target.value)}
         className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2"
       >
-        {defaultModel && !models.includes(defaultModel) && (
-          <option value={defaultModel}>{defaultModel} (actuel)</option>
+        {selected && !models.includes(selected) && (
+          <option value={selected}>{selected} (actuel)</option>
         )}
         {models.map((m) => (
           <option key={m} value={m}>

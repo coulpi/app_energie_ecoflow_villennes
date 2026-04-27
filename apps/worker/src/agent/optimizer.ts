@@ -51,7 +51,15 @@ Ton rôle : optimiser quotidiennement la stratégie de charge/décharge en tenan
 - de la consommation moyenne hebdomadaire par jour/heure,
 - de la prévision météo (rayonnement solaire) sur les 24-48h à venir,
 - des fenêtres tarifaires (heures creuses / pleines),
-- de l'état actuel de la batterie.
+- de l'état actuel de la batterie,
+- des appareils récurrents (loads) et de leur état ON/OFF live.
+
+Repères conso :
+- Conso de base nuit (sans gros appareil) ≈ 650-700 W (réfrigérateur, box, veille).
+- consumption_live.deltaW = current - baseline 1h. Si ce delta correspond
+  à expectedW d'un load ± toleranceW, le champ loads[i].currentlyOn=true
+  signale qu'on PENSE que cet appareil est en marche en ce moment
+  (heuristique, confidence ∈ [0, 1]).
 
 Contraintes dures :
 - Si SoC ≤ 5 %, la prise AC DOIT rester ON (sinon la batterie ne peut plus se réveiller).
@@ -178,16 +186,85 @@ async function buildContext() {
     }));
   }
   if (controlState) ctx.control_state = controlState;
-  const loadsWithSchedule = loads.filter((l) => l.detectedSchedule);
+
+  // Détection live des appareils ON/OFF (heuristique sur conso vs base).
+  const liveLoads = await computeLiveLoads(loads);
+  if (liveLoads.summary) ctx.consumption_live = liveLoads.summary;
   if (loads.length > 0) {
-    ctx.loads = loads.map((l) => ({
-      name: l.name,
-      expectedW: l.expectedPowerW,
-      schedule: l.detectedSchedule,
-    }));
-    void loadsWithSchedule; // référence pour grep futur
+    ctx.loads = loads.map((l) => {
+      const live = liveLoads.profileMap.get(l.id);
+      return {
+        name: l.name,
+        expectedW: l.expectedPowerW,
+        toleranceW: l.toleranceW,
+        schedule: l.detectedSchedule,
+        currentlyOn: live?.currentlyOn ?? false,
+        confidence: live?.confidence ?? 0,
+      };
+    });
   }
   return ctx;
+}
+
+/** Résumé live + état ON/OFF par profil, basé sur la conso CONSUMPTION_METER. */
+async function computeLiveLoads(
+  loads: Array<{ id: string; expectedPowerW: number; toleranceW: number }>,
+): Promise<{
+  summary: { currentW: number | null; baseW: number | null; deltaW: number | null } | null;
+  profileMap: Map<string, { currentlyOn: boolean; confidence: number }>;
+}> {
+  const cons = await prisma.device.findFirst({
+    where: { enabled: true, role: "CONSUMPTION_METER" },
+  });
+  if (!cons) return { summary: null, profileMap: new Map() };
+
+  const since = new Date(Date.now() - 60 * 60_000);
+  const rows = await prisma.reading.findMany({
+    where: { deviceId: cons.id, ts: { gte: since }, powerW: { not: null } },
+    orderBy: { ts: "asc" },
+    select: { ts: true, powerW: true },
+  });
+  const powers = rows
+    .map((r) => Math.max(0, r.powerW ?? 0))
+    .filter((p) => p > 0);
+  const recents = rows
+    .filter((r) => r.ts.getTime() >= Date.now() - 2 * 60_000)
+    .map((r) => Math.max(0, r.powerW ?? 0));
+  const currentW =
+    recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
+
+  let baseW: number | null = null;
+  if (powers.length >= 10) {
+    const sorted = [...powers].sort((a, b) => a - b);
+    const p10 = sorted[Math.floor(sorted.length * 0.1)]!;
+    const p70 = sorted[Math.floor(sorted.length * 0.7)]!;
+    const filtered = sorted.filter((p) => p >= p10 && p <= p70);
+    const med =
+      filtered[Math.floor(filtered.length / 2)] ?? sorted[Math.floor(sorted.length / 2)]!;
+    baseW = Math.max(200, Math.min(1500, med));
+  }
+
+  const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;
+  const profileMap = new Map<string, { currentlyOn: boolean; confidence: number }>();
+  for (const l of loads) {
+    if (deltaW === null) {
+      profileMap.set(l.id, { currentlyOn: false, confidence: 0 });
+      continue;
+    }
+    const distance = Math.abs(deltaW - l.expectedPowerW);
+    const within = distance <= l.toleranceW;
+    const confidence = Math.max(0, 1 - distance / Math.max(l.toleranceW, 1));
+    profileMap.set(l.id, { currentlyOn: within, confidence });
+  }
+
+  return {
+    summary: {
+      currentW: currentW !== null ? Math.round(currentW) : null,
+      baseW: baseW !== null ? Math.round(baseW) : null,
+      deltaW: deltaW !== null ? Math.round(deltaW) : null,
+    },
+    profileMap,
+  };
 }
 
 function minToHHMM(m: number): string {

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import DetectButton from "./DetectButton";
+import { LiveSummary } from "./LiveStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,8 @@ export default async function LoadsPage() {
         </div>
         <DetectButton />
       </header>
+
+      <LiveSummary />
 
       <form
         action={createProfile}
