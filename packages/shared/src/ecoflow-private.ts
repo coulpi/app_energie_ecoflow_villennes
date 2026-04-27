@@ -190,6 +190,11 @@ export function connectEcoFlowPrivateMqtt(
       client.subscribe(`/app/${cert.userId}/${sn}/thing/property/post`, {
         qos: 1,
       });
+      // Topics potentiels pour les acks de commandes (reverse engineering).
+      client.subscribe(`/app/${cert.userId}/${sn}/thing/property/set_reply`, {
+        qos: 1,
+      });
+      client.subscribe(`/app/${cert.userId}/${sn}/thing/cmd/reply`, { qos: 1 });
     }
     opts.onConnect?.();
   });
@@ -244,6 +249,27 @@ export function publishEcoFlowPrivateCommand(
   });
   return new Promise<void>((resolve, reject) => {
     client.publish(topic, payload, { qos: 1 }, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+/**
+ * Variante "raw" : topic et payload arbitraires. Pratique pour tester
+ * différents formats de commande pendant le reverse engineering.
+ */
+export function publishEcoFlowRaw(
+  client: MqttClient,
+  topic: string,
+  payload: unknown,
+): Promise<void> {
+  const buf =
+    typeof payload === "string"
+      ? payload
+      : JSON.stringify(payload);
+  return new Promise<void>((resolve, reject) => {
+    client.publish(topic, buf, { qos: 1 }, (err) => {
       if (err) reject(err);
       else resolve();
     });

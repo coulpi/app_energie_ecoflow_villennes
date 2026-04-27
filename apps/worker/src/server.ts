@@ -9,7 +9,12 @@ import { env } from "./env.js";
 import { log } from "./log.js";
 import { runAgent } from "./agent/optimizer.js";
 import { detectLoadsOnce } from "./agent/loads.js";
-import { publishEcoFlowSet, getEcoFlowPrivateMqtt } from "./pollers/ecoflow.js";
+import {
+  publishEcoFlowSet,
+  publishEcoFlowRawTopic,
+  getEcoFlowPrivateMqtt,
+  getRecentEcoFlowMessages,
+} from "./pollers/ecoflow.js";
 
 const PORT = 3100;
 
@@ -49,6 +54,32 @@ export function startHttpServer(): http.Server {
             userId: ctx?.userId ?? null,
           }),
         );
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/ecoflow/recent") {
+        const n = Number(url.searchParams.get("n") ?? 20);
+        res.writeHead(200);
+        res.end(JSON.stringify({ messages: getRecentEcoFlowMessages(n) }));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/ecoflow/raw") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          topic: string;
+          payload: unknown;
+        };
+        if (!body.topic) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "topic requis" }));
+          return;
+        }
+        await publishEcoFlowRawTopic(body.topic, body.payload);
+        log.info("ecoflow raw published", { topic: body.topic });
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true }));
         return;
       }
 

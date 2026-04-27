@@ -8,7 +8,23 @@ const {
   EcoFlowPrivateClient,
   connectEcoFlowPrivateMqtt,
   publishEcoFlowPrivateCommand,
+  publishEcoFlowRaw,
 } = ecoflowPrivateNs;
+
+// Ring buffer des derniers messages reçus (debug commandes).
+interface MqttRecv {
+  ts: string;
+  sn: string;
+  payload: unknown;
+}
+const recvBuffer: MqttRecv[] = [];
+function pushRecv(sn: string, payload: unknown) {
+  recvBuffer.unshift({ ts: new Date().toISOString(), sn, payload });
+  if (recvBuffer.length > 50) recvBuffer.length = 50;
+}
+export function getRecentEcoFlowMessages(n = 20): MqttRecv[] {
+  return recvBuffer.slice(0, n);
+}
 
 let restClient: InstanceType<typeof EcoFlowClient> | null = null;
 
@@ -39,6 +55,17 @@ export async function publishEcoFlowSet(
     throw new Error("ecoflow private mqtt non connecté");
   }
   await publishEcoFlowPrivateCommand(ctx.client, ctx.userId, sn, body);
+}
+
+export async function publishEcoFlowRawTopic(
+  topic: string,
+  payload: unknown,
+): Promise<void> {
+  const ctx = getEcoFlowPrivateMqtt();
+  if (!ctx) {
+    throw new Error("ecoflow private mqtt non connecté");
+  }
+  await publishEcoFlowRaw(ctx.client, topic, payload);
 }
 
 export function getEcoFlowClient() {
@@ -166,6 +193,7 @@ export async function startEcoFlowMqtt(): Promise<void> {
             devices: batteries.map((b) => b.externalId),
           }),
         onMessage: async (sn, payload) => {
+          pushRecv(sn, payload);
           try {
             const device = batteries.find((b) => b.externalId === sn);
             if (!device) return;
