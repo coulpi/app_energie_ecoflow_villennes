@@ -194,19 +194,24 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     batteryPowerW = 0;
   }
 
-  // Conso = somme prod + grid + bat (bilan énergétique forcé pour cohérence
-  // visuelle, indépendamment du Shelly direct qui peut être sur sous-circuit).
-  const batForBalance = batteryPowerW ?? 0;
+  // Conso maison = ce qui passe physiquement au point de livraison
+  //   consumption = production + grid_signed
+  // (gridW > 0 = import → la maison consomme prod + import ;
+  //  gridW < 0 = export → la maison consomme prod − export.)
+  // La batterie étant branchée sur un circuit maison via la prise AC,
+  // sa charge fait PARTIE de cette conso (elle apparaît au compteur).
+  // On NE déduit PAS la batterie : si la prise AC tire 587 W, c'est
+  // bien 587 W qui passent par la maison.
   if (productionW !== null && gridW !== null) {
-    consumptionW = productionW + gridW + batForBalance;
+    consumptionW = productionW + gridW;
   } else if (measuredConsumptionW !== null) {
     consumptionW = measuredConsumptionW;
   }
   if (productionW === null && consumptionW !== null && gridW !== null) {
-    productionW = Math.max(0, consumptionW - gridW - batForBalance);
+    productionW = Math.max(0, consumptionW - gridW);
   }
   if (gridW === null && productionW !== null && consumptionW !== null) {
-    gridW = consumptionW - productionW - batForBalance;
+    gridW = consumptionW - productionW;
   }
 
   return {
