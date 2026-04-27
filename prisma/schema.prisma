@@ -217,6 +217,10 @@ model ControlState {
   followLoadMaxW     Int         @default(800)
   // Puissance de charge AC max (W) appliquée à la batterie via setChargeWatts.
   chargeMaxW         Int         @default(800)
+  // Borne basse hardware EcoFlow : sous ce seuil, on ne charge pas (prise OFF).
+  chargeMinW         Int         @default(400)
+  // Marge retirée du surplus pour rester sous l'export zéro (W).
+  chargeOffsetW      Int         @default(100)
   // SoC minimum auquel on s'autorise à décharger.
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.

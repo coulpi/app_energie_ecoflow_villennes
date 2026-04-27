@@ -15,6 +15,8 @@ interface FlowSnapshot {
   followLoadMinW: number | null;
   followLoadMaxW: number | null;
   chargeMaxW: number | null;
+  chargeMinW: number | null;
+  chargeOffsetW: number | null;
   ts: string;
 }
 
@@ -795,6 +797,10 @@ function BatteryControl({
 
   const [dischargeMax, setDischargeMax] = useState<number>(maxW);
   const [chargeMax, setChargeMax] = useState<number>(snap.chargeMaxW ?? 800);
+  const [chargeMin, setChargeMin] = useState<number>(snap.chargeMinW ?? 400);
+  const [chargeOffsetEdit, setChargeOffsetEdit] = useState<number>(
+    snap.chargeOffsetW ?? 100,
+  );
   const [saving, setSaving] = useState<"idle" | "saving" | "ok" | "err">("idle");
   const [dirty, setDirty] = useState(false);
 
@@ -803,8 +809,16 @@ function BatteryControl({
     if (!dirty) {
       setDischargeMax(snap.followLoadMaxW ?? 800);
       setChargeMax(snap.chargeMaxW ?? 800);
+      setChargeMin(snap.chargeMinW ?? 400);
+      setChargeOffsetEdit(snap.chargeOffsetW ?? 100);
     }
-  }, [snap.followLoadMaxW, snap.chargeMaxW, dirty]);
+  }, [
+    snap.followLoadMaxW,
+    snap.chargeMaxW,
+    snap.chargeMinW,
+    snap.chargeOffsetW,
+    dirty,
+  ]);
 
   async function apply() {
     setSaving("saving");
@@ -815,6 +829,8 @@ function BatteryControl({
         body: JSON.stringify({
           followLoadMaxW: dischargeMax,
           chargeMaxW: chargeMax,
+          chargeMinW: chargeMin,
+          chargeOffsetW: chargeOffsetEdit,
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -1060,11 +1076,29 @@ function BatteryControl({
           }}
         />
         <ParamRow
-          label="Puissance de charge"
+          label="Charge max"
           color={C.solar}
           value={chargeMax}
           onChange={(v) => {
             setChargeMax(v);
+            setDirty(true);
+          }}
+        />
+        <ParamRow
+          label="Charge min (seuil prise)"
+          color={C.solar}
+          value={chargeMin}
+          onChange={(v) => {
+            setChargeMin(v);
+            setDirty(true);
+          }}
+        />
+        <ParamRow
+          label="Marge surplus"
+          color={C.home}
+          value={chargeOffsetEdit}
+          onChange={(v) => {
+            setChargeOffsetEdit(v);
             setDirty(true);
           }}
         />

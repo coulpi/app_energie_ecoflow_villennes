@@ -83,6 +83,8 @@ export interface DashboardSnapshot {
   followLoadMinW: number | null;
   followLoadMaxW: number | null;
   chargeMaxW: number | null;
+  chargeMinW: number | null;
+  chargeOffsetW: number | null;
   tariffPeriod: string | null;
 }
 
@@ -204,6 +206,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     followLoadMinW: ctrl?.followLoadMinW ?? null,
     followLoadMaxW: ctrl?.followLoadMaxW ?? null,
     chargeMaxW: (ctrl as { chargeMaxW?: number } | null)?.chargeMaxW ?? null,
+    chargeMinW: (ctrl as { chargeMinW?: number } | null)?.chargeMinW ?? null,
+    chargeOffsetW: (ctrl as { chargeOffsetW?: number } | null)?.chargeOffsetW ?? null,
     tariffPeriod: null,
   };
 }

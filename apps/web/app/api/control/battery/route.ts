@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 interface Body {
   followLoadMaxW?: number;
   chargeMaxW?: number;
+  chargeMinW?: number;
+  chargeOffsetW?: number;
 }
 
 export async function POST(req: Request) {
@@ -23,6 +25,12 @@ export async function POST(req: Request) {
   if (typeof body.chargeMaxW === "number" && Number.isFinite(body.chargeMaxW)) {
     data.chargeMaxW = Math.max(0, Math.min(2200, Math.round(body.chargeMaxW)));
   }
+  if (typeof body.chargeMinW === "number" && Number.isFinite(body.chargeMinW)) {
+    data.chargeMinW = Math.max(0, Math.min(2200, Math.round(body.chargeMinW)));
+  }
+  if (typeof body.chargeOffsetW === "number" && Number.isFinite(body.chargeOffsetW)) {
+    data.chargeOffsetW = Math.max(0, Math.min(2000, Math.round(body.chargeOffsetW)));
+  }
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "no_field" }, { status: 400 });
   }
@@ -32,8 +40,15 @@ export async function POST(req: Request) {
     create: { key: "default", ...data },
     update: data,
   });
+  const u = updated as {
+    chargeMaxW?: number;
+    chargeMinW?: number;
+    chargeOffsetW?: number;
+  };
   return NextResponse.json({
     followLoadMaxW: updated.followLoadMaxW,
-    chargeMaxW: (updated as { chargeMaxW?: number }).chargeMaxW ?? null,
+    chargeMaxW: u.chargeMaxW ?? null,
+    chargeMinW: u.chargeMinW ?? null,
+    chargeOffsetW: u.chargeOffsetW ?? null,
   });
 }
