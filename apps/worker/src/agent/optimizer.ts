@@ -46,6 +46,10 @@ const SYSTEM_PROMPT = `Tu es un agent d'optimisation énergétique pour une mais
 - Compteur PJ2101A (réseau, signé : + import / - export)
 - Batterie EcoFlow Delta Max 2000 (~2016 Wh, SoC en %)
 - Prise Tuya en amont de l'entrée AC de la batterie : ON = la batterie peut charger sur secteur, OFF = pas de courant.
+- PowerStream EcoFlow (micro-onduleur grid-tied) connecté à la batterie : il injecte sur le réseau maison pour alimenter la maison via la batterie. Deux modes :
+  - priority 0 = "alimentation" : la batterie alimente la maison via le PS (décharge).
+  - priority 1 = "stockage" : la batterie ne décharge pas, on privilégie de la recharger.
+  Quand priority=0, la consigne `permanentWatts` (0..800 W) fixe la puissance d'injection.
 
 Ton rôle : optimiser quotidiennement la stratégie de charge/décharge en tenant compte :
 - de la consommation moyenne hebdomadaire par jour/heure,
@@ -89,7 +93,17 @@ Tu réponds UNIQUEMENT en JSON valide avec cette structure :
 }
 
 Métriques disponibles : production_W, consumption_W, grid_W, surplus_W, battery.soc, tuya.switch.state, tariff.period, time.minute, time.dow.
-Actions disponibles : tuya.switch.on, tuya.switch.off, ecoflow.setChargeWatts {watts}, ecoflow.setDischargeWatts {watts}, ecoflow.setMaxChargeSoc {soc}, ecoflow.setMinDischargeSoc {soc}.
+Actions disponibles :
+- tuya.switch.on / tuya.switch.off : prise AC IN de la batterie (charge sur secteur).
+- ecoflow.setChargeWatts {watts} : limite de charge AC en W (100..2000).
+- ecoflow.setMaxChargeSoc {soc} / ecoflow.setMinDischargeSoc {soc} : bornes SoC.
+- powerstream.setPermanentWatts {watts} : puissance d'injection PowerStream (0..800).
+- powerstream.setSupplyPriority {priority: 0|1} : 0 = alimentation maison, 1 = stockage batterie.
+
+Stratégie typique :
+- Surplus solaire abondant + SoC bas → priority 1 (stockage) + prise ON pour charger.
+- Conso élevée + SoC haut + tarif PEAK → priority 0 + permanentWatts ajusté à la conso.
+- Nuit hors PEAK et SoC haut : priority 0 pour alimenter via batterie au lieu d'importer.
 Le préfixe [agent] dans le nom des règles est OBLIGATOIRE — il permet au système de remplacer uniquement tes propres règles sans toucher aux règles utilisateur.`;
 
 interface AgentProposal {
@@ -185,7 +199,25 @@ async function buildContext() {
       pricePerKwh: t.pricePerKwh,
     }));
   }
-  if (controlState) ctx.control_state = controlState;
+  if (controlState) {
+    ctx.control_state = controlState;
+    // Expose explicitement l'état PowerStream pour que l'agent le lise
+    // d'un coup d'œil sans creuser dans control_state.
+    const cs = controlState as unknown as {
+      powerstreamSn?: string | null;
+      powerstreamPermanentW?: number;
+      powerstreamPriority?: number;
+    };
+    if (cs.powerstreamSn) {
+      ctx.powerstream = {
+        sn: cs.powerstreamSn,
+        permanentW: cs.powerstreamPermanentW ?? 0,
+        priority: cs.powerstreamPriority ?? 0,
+        priorityLabel:
+          (cs.powerstreamPriority ?? 0) === 0 ? "alimentation" : "stockage",
+      };
+    }
+  }
 
   // Détection live des appareils ON/OFF (heuristique sur conso vs base).
   const liveLoads = await computeLiveLoads(loads);

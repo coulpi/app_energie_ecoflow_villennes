@@ -77,6 +77,12 @@ const ACTION_LABEL: Record<string, (p: Record<string, unknown>) => string> = {
   "ecoflow.setMinDischargeSoc": (p) => `SoC min décharge → ${p.soc} %`,
   "ecoflow.setOutputMode": (p) =>
     p.acOn ? "Activer la sortie AC" : "Désactiver la sortie AC",
+  "powerstream.setPermanentWatts": (p) =>
+    `Régler l'injection PowerStream à ${p.watts} W`,
+  "powerstream.setSupplyPriority": (p) =>
+    p.priority === 1
+      ? "PowerStream → mode stockage (priorité charge batterie)"
+      : "PowerStream → mode alimentation (la batterie alimente la maison)",
   "control.setMode": (p) => `Basculer en mode ${p.mode}`,
   "control.setFollowLoad": (p) =>
     `Mode FOLLOW_LOAD : offset ${p.offsetW} W, [${p.minW} W, ${p.maxW} W]`,

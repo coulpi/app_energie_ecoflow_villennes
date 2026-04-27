@@ -44,6 +44,8 @@ export const ActionSchema = z.object({
     "ecoflow.setMaxChargeSoc",
     "ecoflow.setMinDischargeSoc",
     "ecoflow.setOutputMode",
+    "powerstream.setPermanentWatts",
+    "powerstream.setSupplyPriority",
     "control.setMode",
     "control.setFollowLoad",
   ]),

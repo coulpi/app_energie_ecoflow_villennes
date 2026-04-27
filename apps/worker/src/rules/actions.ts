@@ -159,6 +159,42 @@ export async function applyAction(
       return { sn: bat.externalId, acOn };
     }
 
+    case "powerstream.setPermanentWatts": {
+      const ctrl = (await prisma.controlState.findUnique({
+        where: { key: "default" },
+      })) as { powerstreamSn?: string | null } | null;
+      const sn = ctrl?.powerstreamSn;
+      if (!sn) throw new Error("powerstreamSn non configuré");
+      const watts = Math.max(0, Math.min(800, Number(params.watts ?? 0)));
+      const { publishPowerStreamCommand } = await import(
+        "../pollers/ecoflow.js"
+      );
+      await publishPowerStreamCommand(sn, { kind: "permanentWatts", watts });
+      await prisma.controlState.update({
+        where: { key: "default" },
+        data: { powerstreamPermanentW: watts } as never,
+      });
+      return { sn, watts };
+    }
+
+    case "powerstream.setSupplyPriority": {
+      const ctrl = (await prisma.controlState.findUnique({
+        where: { key: "default" },
+      })) as { powerstreamSn?: string | null } | null;
+      const sn = ctrl?.powerstreamSn;
+      if (!sn) throw new Error("powerstreamSn non configuré");
+      const priority = (Number(params.priority ?? 0) === 1 ? 1 : 0) as 0 | 1;
+      const { publishPowerStreamCommand } = await import(
+        "../pollers/ecoflow.js"
+      );
+      await publishPowerStreamCommand(sn, { kind: "supplyPriority", priority });
+      await prisma.controlState.update({
+        where: { key: "default" },
+        data: { powerstreamPriority: priority } as never,
+      });
+      return { sn, priority };
+    }
+
     case "control.setMode": {
       const mode = String(params.mode ?? "RULES");
       await prisma.controlState.upsert({
