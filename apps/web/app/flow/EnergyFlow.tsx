@@ -1712,20 +1712,20 @@ function FlowDiagram({ scenario }: { scenario: Scenario }) {
           réseau exclu). */}
       <g style={{ pointerEvents: "none" }}>
         <rect
-          x={110}
-          y={35}
-          width={550}
-          height={500}
-          rx={20}
-          ry={20}
+          x={80}
+          y={10}
+          width={600}
+          height={540}
+          rx={22}
+          ry={22}
           fill="none"
           stroke="rgba(255,255,255,0.18)"
           strokeWidth={1.4}
           strokeDasharray="6 6"
         />
         <text
-          x={134}
-          y={56}
+          x={104}
+          y={32}
           style={{
             font: "600 10px ui-sans-serif, system-ui",
             letterSpacing: "0.18em",
