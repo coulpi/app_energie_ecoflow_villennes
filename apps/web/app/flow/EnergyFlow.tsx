@@ -122,6 +122,15 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
   const [series, setSeries] = useState<SeriesPayload | null>(null);
   const [today, setToday] = useState<TodaySummaryData | null>(null);
   const [liveLoads, setLiveLoads] = useState<LiveLoadPayload | null>(null);
+  // Le BMS Delta Max ne pousse pas le SoC à chaque poll : on garde la
+  // dernière valeur connue pour ne pas faire clignoter l'affichage à 0%.
+  const [lastSoc, setLastSoc] = useState<number | null>(initial.batterySoc);
+
+  useEffect(() => {
+    if (snap.batterySoc !== null && snap.batterySoc !== undefined) {
+      setLastSoc(snap.batterySoc);
+    }
+  }, [snap.batterySoc]);
 
   useEffect(() => {
     const tick = async () => {
@@ -185,7 +194,12 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
     consumption: Math.max(0, Math.round(snap.consumptionW ?? 0)),
     gridFlow: Math.round(snap.gridW ?? 0),
     batteryFlow: Math.round(-(snap.batteryPowerW ?? 0)),
-    batteryLevel: snap.batterySoc === null ? 0 : Math.round(snap.batterySoc),
+    batteryLevel:
+      snap.batterySoc !== null && snap.batterySoc !== undefined
+        ? Math.round(snap.batterySoc)
+        : lastSoc !== null
+          ? Math.round(lastSoc)
+          : 0,
   };
 
   return (
