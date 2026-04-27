@@ -17,7 +17,16 @@ interface FlowSnapshot {
   chargeMaxW: number | null;
   chargeMinW: number | null;
   chargeOffsetW: number | null;
+  chargeDeficitTimeoutMin: number | null;
+  chargeOffToOnLockMin: number | null;
   ts: string;
+}
+
+interface FollowLoadState {
+  switchOn: boolean | null;
+  chargeW: number | null;
+  deficit: { active: boolean; remainingMs: number | null };
+  offLock: { active: boolean; remainingMs: number | null };
 }
 
 interface Scenario {
@@ -785,6 +794,29 @@ function BatteryControl({
   const acOn = snap.switchOn === true;
   const acUnknown = snap.switchOn === null;
   const acPower = Math.max(0, Math.round(snap.acSwitchPowerW ?? 0));
+
+  // Compte à rebours basé sur followState + dérive locale.
+  const liveRemaining = (atMs: number, remainingMs: number | null): number | null => {
+    if (remainingMs === null) return null;
+    const drift = Date.now() - atMs;
+    return Math.max(0, remainingMs - drift);
+  };
+  const deficitMs = followState
+    ? liveRemaining(followState.fetchedAt, followState.deficit.remainingMs)
+    : null;
+  const offLockMs = followState
+    ? liveRemaining(followState.fetchedAt, followState.offLock.remainingMs)
+    : null;
+  const deficitActive =
+    followState?.deficit.active === true && deficitMs !== null && deficitMs > 0;
+  const offLockActive =
+    followState?.offLock.active === true && offLockMs !== null && offLockMs > 0;
+  const fmtCountdown = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, "0")}`;
+  };
   const dischargeW = scenario.batteryFlow < 0 ? -scenario.batteryFlow : 0;
   const isFollowLoad = snap.controlMode === "FOLLOW_LOAD";
   const offset = snap.followLoadOffsetW ?? 0;
@@ -801,8 +833,18 @@ function BatteryControl({
   const [chargeOffsetEdit, setChargeOffsetEdit] = useState<number>(
     snap.chargeOffsetW ?? 100,
   );
+  const [deficitTimeout, setDeficitTimeout] = useState<number>(
+    snap.chargeDeficitTimeoutMin ?? 10,
+  );
+  const [offLockTimeout, setOffLockTimeout] = useState<number>(
+    snap.chargeOffToOnLockMin ?? 5,
+  );
   const [saving, setSaving] = useState<"idle" | "saving" | "ok" | "err">("idle");
   const [dirty, setDirty] = useState(false);
+  const [followState, setFollowState] = useState<
+    (FollowLoadState & { fetchedAt: number }) | null
+  >(null);
+  const [, setTick] = useState(0);
 
   // Re-sync depuis le snapshot tant que l'utilisateur n'a pas édité.
   useEffect(() => {
@@ -811,14 +853,42 @@ function BatteryControl({
       setChargeMax(snap.chargeMaxW ?? 800);
       setChargeMin(snap.chargeMinW ?? 400);
       setChargeOffsetEdit(snap.chargeOffsetW ?? 100);
+      setDeficitTimeout(snap.chargeDeficitTimeoutMin ?? 10);
+      setOffLockTimeout(snap.chargeOffToOnLockMin ?? 5);
     }
   }, [
     snap.followLoadMaxW,
     snap.chargeMaxW,
     snap.chargeMinW,
     snap.chargeOffsetW,
+    snap.chargeDeficitTimeoutMin,
+    snap.chargeOffToOnLockMin,
     dirty,
   ]);
+
+  // Poll du state interne du worker (timers).
+  useEffect(() => {
+    const fetchState = async () => {
+      try {
+        const res = await fetch("/api/follow-load/state", { cache: "no-store" });
+        if (res.ok) {
+          const json = (await res.json()) as FollowLoadState;
+          setFollowState({ ...json, fetchedAt: Date.now() });
+        }
+      } catch {
+        // ignore
+      }
+    };
+    void fetchState();
+    const id = setInterval(fetchState, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Tick local pour faire descendre le compte à rebours entre 2 polls.
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   async function apply() {
     setSaving("saving");
@@ -831,6 +901,8 @@ function BatteryControl({
           chargeMaxW: chargeMax,
           chargeMinW: chargeMin,
           chargeOffsetW: chargeOffsetEdit,
+          chargeDeficitTimeoutMin: deficitTimeout,
+          chargeOffToOnLockMin: offLockTimeout,
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -925,6 +997,76 @@ function BatteryControl({
           {acUnknown ? "—" : acOn ? "ON" : "OFF"}
         </div>
       </div>
+
+      {(deficitActive || offLockActive) && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            marginBottom: 12,
+          }}
+        >
+          {deficitActive && deficitMs !== null && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "6px 10px",
+                borderRadius: 8,
+                background: `${C.importRed}10`,
+                border: `1px solid ${C.importRed}33`,
+                font: "500 11px ui-sans-serif, system-ui",
+                color: C.text,
+              }}
+            >
+              <span>
+                <span style={{ color: C.importRed, fontWeight: 600 }}>⚠ </span>
+                Tolérance déficit · coupure dans
+              </span>
+              <span
+                style={{
+                  font: '600 13px "JetBrains Mono", ui-monospace, monospace',
+                  color: C.importRed,
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {fmtCountdown(deficitMs)}
+              </span>
+            </div>
+          )}
+          {offLockActive && offLockMs !== null && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "6px 10px",
+                borderRadius: 8,
+                background: `${C.textMute}14`,
+                border: `1px solid ${C.borderHi}`,
+                font: "500 11px ui-sans-serif, system-ui",
+                color: C.text,
+              }}
+            >
+              <span>
+                <span style={{ color: C.textDim }}>🔒 </span>
+                Verrou redémarrage · ON possible dans
+              </span>
+              <span
+                style={{
+                  font: '600 13px "JetBrains Mono", ui-monospace, monospace',
+                  color: C.textDim,
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {fmtCountdown(offLockMs)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginBottom: 10 }}>
         <div
@@ -1102,6 +1244,26 @@ function BatteryControl({
             setDirty(true);
           }}
         />
+        <ParamRow
+          label="Tolérance déficit"
+          color={C.importRed}
+          value={deficitTimeout}
+          unit="min"
+          onChange={(v) => {
+            setDeficitTimeout(v);
+            setDirty(true);
+          }}
+        />
+        <ParamRow
+          label="Verrou redémarrage"
+          color={C.textDim}
+          value={offLockTimeout}
+          unit="min"
+          onChange={(v) => {
+            setOffLockTimeout(v);
+            setDirty(true);
+          }}
+        />
         <div
           style={{
             display: "flex",
@@ -1161,11 +1323,13 @@ function ParamRow({
   value,
   onChange,
   color,
+  unit = "W",
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   color: string;
+  unit?: string;
 }) {
   return (
     <div
@@ -1199,8 +1363,8 @@ function ParamRow({
         <input
           type="number"
           min={0}
-          max={2200}
-          step={50}
+          max={unit === "min" ? 120 : 2200}
+          step={unit === "min" ? 1 : 50}
           value={value}
           onChange={(e) => onChange(Math.round(Number(e.target.value) || 0))}
           style={{
@@ -1220,7 +1384,7 @@ function ParamRow({
             color: C.textMute,
           }}
         >
-          W
+          {unit}
         </span>
       </div>
     </div>

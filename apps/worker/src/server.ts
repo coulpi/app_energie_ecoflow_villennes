@@ -15,6 +15,8 @@ import {
   getEcoFlowPrivateMqtt,
   getRecentEcoFlowMessages,
 } from "./pollers/ecoflow.js";
+import { getFollowLoadState } from "./rules/follow-load.js";
+import { prisma } from "./db.js";
 
 const PORT = 3100;
 
@@ -24,6 +26,56 @@ export function startHttpServer(): http.Server {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "x"}`);
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Access-Control-Allow-Origin", "*");
+
+      if (req.method === "GET" && url.pathname === "/follow-load/state") {
+        const state = getFollowLoadState();
+        const ctrl = (await prisma.controlState.findUnique({
+          where: { key: "default" },
+        })) as
+          | {
+              chargeDeficitTimeoutMin?: number;
+              chargeOffToOnLockMin?: number;
+              chargeMinW?: number;
+            }
+          | null;
+        const now = Date.now();
+        const deficitTimeoutMs = (ctrl?.chargeDeficitTimeoutMin ?? 10) * 60_000;
+        const offToOnLockMs = (ctrl?.chargeOffToOnLockMin ?? 5) * 60_000;
+        const deficitElapsedMs =
+          state.deficitStartedAtMs !== null ? now - state.deficitStartedAtMs : null;
+        const deficitRemainingMs =
+          deficitElapsedMs !== null
+            ? Math.max(0, deficitTimeoutMs - deficitElapsedMs)
+            : null;
+        const offLockElapsedMs =
+          state.lastOffAtMs !== null ? now - state.lastOffAtMs : null;
+        const offLockRemainingMs =
+          offLockElapsedMs !== null
+            ? Math.max(0, offToOnLockMs - offLockElapsedMs)
+            : null;
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            switchOn: state.switchOn,
+            chargeW: state.chargeW,
+            dischargeW: state.dischargeW,
+            deficit: {
+              active: deficitElapsedMs !== null,
+              elapsedMs: deficitElapsedMs,
+              remainingMs: deficitRemainingMs,
+              timeoutMs: deficitTimeoutMs,
+            },
+            offLock: {
+              active:
+                offLockRemainingMs !== null && offLockRemainingMs > 0,
+              elapsedMs: offLockElapsedMs,
+              remainingMs: offLockRemainingMs,
+              timeoutMs: offToOnLockMs,
+            },
+          }),
+        );
+        return;
+      }
 
       if (req.method === "GET" && url.pathname === "/health") {
         res.writeHead(200);

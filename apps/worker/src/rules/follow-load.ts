@@ -22,11 +22,24 @@ const SURPLUS_HYST_W = 50;
 // Rampe : variation max de la puissance de charge entre 2 ticks. À 30 s
 // de polling, 100 W/tick ≈ +200 W/min, monte de 0 à 800 W en ~4 min.
 const CHARGE_RAMP_W_PER_TICK = 100;
-// Tolérance : on accepte de charger en tirant un peu sur le réseau (la
-// batterie ne peut pas descendre sous chargeMinW). Au-delà de cette durée
-// continue en déficit pendant la charge, on coupe la prise.
-const CHARGE_DEFICIT_TIMEOUT_MS = 10 * 60_000;
 let deficitStartedAtMs: number | null = null;
+let lastOffAtMs: number | null = null;
+
+export function getFollowLoadState(): {
+  switchOn: boolean | null;
+  chargeW: number | null;
+  dischargeW: number | null;
+  deficitStartedAtMs: number | null;
+  lastOffAtMs: number | null;
+} {
+  return {
+    switchOn: last.switchOn,
+    chargeW: last.chargeW,
+    dischargeW: last.dischargeW,
+    deficitStartedAtMs,
+    lastOffAtMs,
+  };
+}
 
 interface AppliedState {
   switchOn: boolean | null;
@@ -45,6 +58,7 @@ async function setSwitch(on: boolean): Promise<void> {
     { action: on ? "tuya.switch.on" : "tuya.switch.off", params: {} },
     { snapshot: await buildSnapshot() },
   );
+  if (!on) lastOffAtMs = Date.now();
   last.switchOn = on;
   log.info("follow-load: prise AC", { switchOn: on });
 }
@@ -83,6 +97,8 @@ export async function tickFollowLoad(): Promise<void> {
         chargeMinW?: number | null;
         chargeMaxW?: number | null;
         chargeOffsetW?: number | null;
+        chargeDeficitTimeoutMin?: number | null;
+        chargeOffToOnLockMin?: number | null;
         minDischargeSoc: number;
         maxChargeSoc: number;
       }
@@ -107,6 +123,8 @@ export async function tickFollowLoad(): Promise<void> {
   const chargeMinW = ctrl.chargeMinW ?? 400;
   const chargeMaxW = ctrl.chargeMaxW ?? 800;
   const chargeOffsetW = ctrl.chargeOffsetW ?? 100;
+  const deficitTimeoutMs = (ctrl.chargeDeficitTimeoutMin ?? 10) * 60_000;
+  const offToOnLockMs = (ctrl.chargeOffToOnLockMin ?? 5) * 60_000;
   const soc = m.battery_soc;
 
   const surplus = m.surplus_W; // > 0 = export, < 0 = import
@@ -123,8 +141,13 @@ export async function tickFollowLoad(): Promise<void> {
   // réseau). On ne coupe que si cet état dure plus de
   // CHARGE_DEFICIT_TIMEOUT_MS — un consommateur temporaire (four, plaque,
   // etc.) qui démarre puis s'arrête ne fait pas claquer la prise.
+  // Verrou OFF → ON : refuse de rallumer pendant offToOnLockMs après un OFF.
+  const offLockActive =
+    lastOffAtMs !== null && now - lastOffAtMs < offToOnLockMs;
   const canStartCharge =
-    surplus >= switchOnTriggerW && (soc === null || soc < ctrl.maxChargeSoc);
+    !offLockActive &&
+    surplus >= switchOnTriggerW &&
+    (soc === null || soc < ctrl.maxChargeSoc);
   const canKeepCharge =
     alreadyCharging && (soc === null || soc < ctrl.maxChargeSoc);
 
@@ -145,7 +168,7 @@ export async function tickFollowLoad(): Promise<void> {
           surplus_W: surplus,
           chargeMinW,
         });
-      } else if (now - deficitStartedAtMs > CHARGE_DEFICIT_TIMEOUT_MS) {
+      } else if (now - deficitStartedAtMs > deficitTimeoutMs) {
         log.info("follow-load: déficit charge > 10 min, coupure prise", {
           surplus_W: surplus,
         });

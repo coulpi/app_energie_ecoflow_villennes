@@ -221,6 +221,12 @@ model ControlState {
   chargeMinW         Int         @default(400)
   // Marge retirée du surplus pour rester sous l'export zéro (W).
   chargeOffsetW      Int         @default(100)
+  // Tolérance avant de couper la prise quand surplus < chargeMinW pendant
+  // une charge (minutes). Permet d'absorber un consommateur ponctuel.
+  chargeDeficitTimeoutMin Int    @default(10)
+  // Verrou de redémarrage : durée minimale (minutes) pendant laquelle on
+  // refuse de rallumer la prise après l'avoir coupée.
+  chargeOffToOnLockMin    Int    @default(5)
   // SoC minimum auquel on s'autorise à décharger.
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.

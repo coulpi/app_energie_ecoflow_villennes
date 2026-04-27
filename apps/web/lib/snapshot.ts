@@ -85,6 +85,8 @@ export interface DashboardSnapshot {
   chargeMaxW: number | null;
   chargeMinW: number | null;
   chargeOffsetW: number | null;
+  chargeDeficitTimeoutMin: number | null;
+  chargeOffToOnLockMin: number | null;
   tariffPeriod: string | null;
 }
 
@@ -208,6 +210,10 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     chargeMaxW: (ctrl as { chargeMaxW?: number } | null)?.chargeMaxW ?? null,
     chargeMinW: (ctrl as { chargeMinW?: number } | null)?.chargeMinW ?? null,
     chargeOffsetW: (ctrl as { chargeOffsetW?: number } | null)?.chargeOffsetW ?? null,
+    chargeDeficitTimeoutMin:
+      (ctrl as { chargeDeficitTimeoutMin?: number } | null)?.chargeDeficitTimeoutMin ?? null,
+    chargeOffToOnLockMin:
+      (ctrl as { chargeOffToOnLockMin?: number } | null)?.chargeOffToOnLockMin ?? null,
     tariffPeriod: null,
   };
 }

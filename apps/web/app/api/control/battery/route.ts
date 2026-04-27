@@ -8,6 +8,8 @@ interface Body {
   chargeMaxW?: number;
   chargeMinW?: number;
   chargeOffsetW?: number;
+  chargeDeficitTimeoutMin?: number;
+  chargeOffToOnLockMin?: number;
 }
 
 export async function POST(req: Request) {
@@ -30,6 +32,24 @@ export async function POST(req: Request) {
   }
   if (typeof body.chargeOffsetW === "number" && Number.isFinite(body.chargeOffsetW)) {
     data.chargeOffsetW = Math.max(0, Math.min(2000, Math.round(body.chargeOffsetW)));
+  }
+  if (
+    typeof body.chargeDeficitTimeoutMin === "number" &&
+    Number.isFinite(body.chargeDeficitTimeoutMin)
+  ) {
+    data.chargeDeficitTimeoutMin = Math.max(
+      0,
+      Math.min(120, Math.round(body.chargeDeficitTimeoutMin)),
+    );
+  }
+  if (
+    typeof body.chargeOffToOnLockMin === "number" &&
+    Number.isFinite(body.chargeOffToOnLockMin)
+  ) {
+    data.chargeOffToOnLockMin = Math.max(
+      0,
+      Math.min(60, Math.round(body.chargeOffToOnLockMin)),
+    );
   }
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "no_field" }, { status: 400 });
