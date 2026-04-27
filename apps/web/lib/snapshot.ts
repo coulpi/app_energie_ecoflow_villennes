@@ -217,9 +217,13 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   // Conso maison = ce qui passe physiquement au point de livraison
   //   consumption = production + grid_signed + powerstream_output
   // (le PowerStream injecte sur le réseau maison depuis la batterie ; il
-  //  réduit l'import grid sans réduire la conso physique réelle, on doit
-  //  donc le rajouter au bilan).
-  const psW = (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? 0;
+  //  réduit l'import grid sans réduire la conso physique réelle).
+  // ATTENTION : on ne compte le PS que s'il est en mode alimentation
+  // (priority=0). En mode stockage (priority=1), il n'injecte rien
+  // même si la consigne permanentW est non nulle.
+  const rawPsW = (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? 0;
+  const psPriorityRaw = (ctrl as { powerstreamPriority?: number } | null)?.powerstreamPriority ?? 0;
+  const psW = psPriorityRaw === 0 ? rawPsW : 0;
   if (productionW !== null && gridW !== null) {
     consumptionW = productionW + gridW + psW;
   } else if (measuredConsumptionW !== null) {
