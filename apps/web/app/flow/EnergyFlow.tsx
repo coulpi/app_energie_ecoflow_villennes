@@ -79,11 +79,16 @@ const FD_DIM = "rgba(255,255,255,0.08)";
 
 const GEO = {
   W: 1000,
-  H: 560,
+  H: 660,
   solar: { x: 500, y: 110, r: 58 },
-  home: { x: 500, y: 430, r: 64 },
-  battery: { x: 180, y: 380, r: 54 },
-  grid: { x: 820, y: 380, r: 54 },
+  home: { x: 500, y: 410, r: 64 },
+  battery: { x: 180, y: 360, r: 54 },
+  grid: { x: 820, y: 360, r: 54 },
+  // Équipements : 4 mini-nœuds en ligne sous home, dans le périmètre
+  // maison. Rayon 24 pour rester discrets.
+  equipmentY: 580,
+  equipmentR: 24,
+  equipmentXs: [240, 380, 520, 660] as readonly number[],
 } as const;
 
 interface SeriesPayload {
@@ -98,11 +103,25 @@ interface TodaySummaryData {
   exportedWh: number;
   savedEur: number;
 }
+interface LiveLoadProfile {
+  id: string;
+  name: string;
+  expectedW: number;
+  currentlyOn: boolean;
+  confidence: number;
+}
+interface LiveLoadPayload {
+  currentW: number | null;
+  baseW: number | null;
+  deltaW: number | null;
+  profiles: LiveLoadProfile[];
+}
 
 export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
   const [snap, setSnap] = useState<FlowSnapshot>(initial);
   const [series, setSeries] = useState<SeriesPayload | null>(null);
   const [today, setToday] = useState<TodaySummaryData | null>(null);
+  const [liveLoads, setLiveLoads] = useState<LiveLoadPayload | null>(null);
 
   useEffect(() => {
     const tick = async () => {
@@ -136,13 +155,26 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
         // ignore
       }
     };
+    const fetchLoads = async () => {
+      try {
+        const res = await fetch("/api/loads/live", { cache: "no-store" });
+        if (res.ok) setLiveLoads(await res.json());
+      } catch {
+        // ignore
+      }
+    };
     void fetchSeries();
     void fetchToday();
+    void fetchLoads();
     const id = setInterval(() => {
       void fetchSeries();
       void fetchToday();
     }, 60_000);
-    return () => clearInterval(id);
+    const idLoads = setInterval(fetchLoads, 15_000);
+    return () => {
+      clearInterval(id);
+      clearInterval(idLoads);
+    };
   }, []);
 
   // Conversion snapshot → scenario (template).
@@ -298,8 +330,8 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
               </div>
             </div>
 
-            <div style={{ position: "relative", height: 510 }}>
-              <FlowDiagram scenario={scenario} />
+            <div style={{ position: "relative", height: 600 }}>
+              <FlowDiagram scenario={scenario} liveLoads={liveLoads} />
             </div>
           </div>
 
@@ -1711,7 +1743,13 @@ function TodaySummary({ today }: { today: TodaySummaryData | null }) {
 }
 
 // ── Flow diagram ────────────────────────────────────────────────────
-function FlowDiagram({ scenario }: { scenario: Scenario }) {
+function FlowDiagram({
+  scenario,
+  liveLoads,
+}: {
+  scenario: Scenario;
+  liveLoads: LiveLoadPayload | null;
+}) {
   const { production, consumption, gridFlow, batteryFlow, batteryLevel } = scenario;
 
   const gridToHome = Math.max(0, gridFlow > 0 ? gridFlow : 0);
@@ -1775,7 +1813,7 @@ function FlowDiagram({ scenario }: { scenario: Scenario }) {
           x={80}
           y={10}
           width={600}
-          height={540}
+          height={640}
           rx={22}
           ry={22}
           fill="none"
@@ -1810,6 +1848,40 @@ function FlowDiagram({ scenario }: { scenario: Scenario }) {
         power={Math.max(batteryToHome, homeToBattery)}
         reverse={homeToBattery > 0}
       />
+
+      {/* Équipements maison : flux animé home → équipement quand ON */}
+      {liveLoads?.profiles?.map((p, i) => {
+        const x = GEO.equipmentXs[i] ?? 500;
+        const y = GEO.equipmentY;
+        const path = curvePath(
+          GEO.home,
+          { x, y, r: GEO.equipmentR },
+          0,
+        );
+        return (
+          <FlowPath
+            key={`eqflow-${p.id}`}
+            d={path}
+            color={FD.home}
+            power={p.currentlyOn ? p.expectedW : 0}
+          />
+        );
+      })}
+      {liveLoads?.profiles?.map((p, i) => {
+        const x = GEO.equipmentXs[i] ?? 500;
+        const y = GEO.equipmentY;
+        return (
+          <EquipmentNode
+            key={`eqnode-${p.id}`}
+            cx={x}
+            cy={y}
+            r={GEO.equipmentR}
+            name={p.name}
+            powerW={p.expectedW}
+            on={p.currentlyOn}
+          />
+        );
+      })}
 
       <Node
         cx={GEO.solar.x}
@@ -2041,6 +2113,60 @@ function Node({
           {sub}
         </text>
       )}
+    </g>
+  );
+}
+
+function EquipmentNode({
+  cx,
+  cy,
+  r,
+  name,
+  powerW,
+  on,
+}: {
+  cx: number;
+  cy: number;
+  r: number;
+  name: string;
+  powerW: number;
+  on: boolean;
+}) {
+  const color = on ? FD.home : { base: "rgba(255,255,255,0.3)", glow: "rgba(255,255,255,0.05)" };
+  return (
+    <g transform={`translate(${cx} ${cy})`}>
+      {on && <circle r={r + 8} fill={color.glow} />}
+      <circle
+        r={r}
+        fill="rgba(10,12,18,0.85)"
+        stroke={color.base}
+        strokeWidth={on ? 1.4 : 1}
+        opacity={on ? 1 : 0.55}
+      />
+      <text
+        textAnchor="middle"
+        y={-1}
+        style={{
+          font: '600 11px "JetBrains Mono", ui-monospace, monospace',
+          fill: on ? color.base : "rgba(255,255,255,0.4)",
+          letterSpacing: "-0.02em",
+        }}
+      >
+        {Math.round(powerW)}
+        <tspan style={{ fontSize: 8, opacity: 0.7 }}> W</tspan>
+      </text>
+      <text
+        textAnchor="middle"
+        y={r + 14}
+        style={{
+          font: "500 9.5px ui-sans-serif, system-ui",
+          fill: on ? "rgba(245,245,250,0.8)" : "rgba(245,245,250,0.45)",
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        {name}
+      </text>
     </g>
   );
 }
