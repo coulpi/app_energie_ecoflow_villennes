@@ -38,6 +38,21 @@ async function deleteProfile(id: string) {
   revalidatePath("/loads");
 }
 
+async function updateProfile(id: string, formData: FormData) {
+  "use server";
+  await prisma.loadProfile.update({
+    where: { id },
+    data: {
+      name: String(formData.get("name") ?? "").trim() || undefined,
+      expectedPowerW: Math.max(50, Number(formData.get("expectedPowerW") ?? 1000)),
+      toleranceW: Math.max(20, Number(formData.get("toleranceW") ?? 150)),
+      minDurationMin: Math.max(5, Number(formData.get("minDurationMin") ?? 15)),
+      notes: String(formData.get("notes") ?? "").trim() || null,
+    },
+  });
+  revalidatePath("/loads");
+}
+
 export default async function LoadsPage() {
   const [profiles, recentEvents] = await Promise.all([
     prisma.loadProfile.findMany({
@@ -173,6 +188,61 @@ export default async function LoadsPage() {
                 </form>
               </div>
               {p.notes && <p className="text-xs text-zinc-500">{p.notes}</p>}
+              <details className="text-xs">
+                <summary className="text-zinc-400 hover:text-zinc-200 cursor-pointer select-none">
+                  Éditer
+                </summary>
+                <form
+                  action={updateProfile.bind(null, p.id)}
+                  className="grid grid-cols-1 sm:grid-cols-5 gap-2 mt-2 p-2 bg-zinc-900/40 border border-zinc-800 rounded"
+                >
+                  <input
+                    name="name"
+                    defaultValue={p.name}
+                    placeholder="Nom"
+                    className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 sm:col-span-2"
+                  />
+                  <label className="flex flex-col gap-0.5 text-[10px] uppercase text-zinc-500">
+                    Puiss. moy. (W)
+                    <input
+                      name="expectedPowerW"
+                      type="number"
+                      min={50}
+                      defaultValue={p.expectedPowerW}
+                      className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] uppercase text-zinc-500">
+                    Tolérance ±W
+                    <input
+                      name="toleranceW"
+                      type="number"
+                      min={20}
+                      defaultValue={p.toleranceW}
+                      className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] uppercase text-zinc-500">
+                    Durée min (min)
+                    <input
+                      name="minDurationMin"
+                      type="number"
+                      min={5}
+                      defaultValue={p.minDurationMin}
+                      className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
+                    />
+                  </label>
+                  <input
+                    name="notes"
+                    defaultValue={p.notes ?? ""}
+                    placeholder="Notes"
+                    className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 sm:col-span-4"
+                  />
+                  <button className="bg-emerald-600 hover:bg-emerald-500 rounded px-3 py-1.5 text-xs">
+                    Enregistrer
+                  </button>
+                </form>
+              </details>
               {sched?.slots && sched.slots.length > 0 ? (
                 <div className="text-xs text-zinc-400">
                   <span className="text-zinc-500 mr-2">Planning détecté :</span>
