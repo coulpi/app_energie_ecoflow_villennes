@@ -11,6 +11,43 @@ const {
   publishEcoFlowRaw,
 } = ecoflowPrivateNs;
 
+import { ecoflowPowerstream as psNs } from "@app/shared";
+const { createPowerStreamCommands, publishPowerStreamPayload } = psNs;
+type PsAction =
+  | { kind: "permanentWatts"; watts: number }
+  | { kind: "supplyPriority"; priority: 0 | 1 }
+  | { kind: "batUpper"; percent: number }
+  | { kind: "batLower"; percent: number }
+  | { kind: "feedProtect"; enabled: boolean };
+
+export async function publishPowerStreamCommand(
+  sn: string,
+  action: PsAction,
+): Promise<void> {
+  const ctx = getEcoFlowPrivateMqtt();
+  if (!ctx) throw new Error("ecoflow private mqtt non connecté");
+  const cmds = createPowerStreamCommands(sn);
+  let payload: Uint8Array;
+  switch (action.kind) {
+    case "permanentWatts":
+      payload = cmds.setPermanentWatts(action.watts);
+      break;
+    case "supplyPriority":
+      payload = cmds.setSupplyPriority(action.priority);
+      break;
+    case "batUpper":
+      payload = cmds.setBatUpper(action.percent);
+      break;
+    case "batLower":
+      payload = cmds.setBatLower(action.percent);
+      break;
+    case "feedProtect":
+      payload = cmds.setFeedProtect(action.enabled);
+      break;
+  }
+  await publishPowerStreamPayload(ctx.client, ctx.userId, sn, payload);
+}
+
 // Ring buffer des derniers messages reçus (debug commandes).
 interface MqttRecv {
   ts: string;

@@ -14,6 +14,7 @@ import {
   publishEcoFlowRawTopic,
   getEcoFlowPrivateMqtt,
   getRecentEcoFlowMessages,
+  publishPowerStreamCommand,
 } from "./pollers/ecoflow.js";
 import { getFollowLoadState } from "./rules/follow-load.js";
 import { prisma } from "./db.js";
@@ -159,6 +160,63 @@ export function startHttpServer(): http.Server {
         log.info("ecoflow raw published", { topic: body.topic });
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/ecoflow/powerstream/cmd") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          sn: string;
+          kind: string;
+          watts?: number;
+          priority?: number;
+          percent?: number;
+          enabled?: boolean;
+        };
+        if (!body.sn || !body.kind) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "sn et kind requis" }));
+          return;
+        }
+        try {
+          if (body.kind === "permanentWatts") {
+            await publishPowerStreamCommand(body.sn, {
+              kind: "permanentWatts",
+              watts: body.watts ?? 0,
+            });
+          } else if (body.kind === "supplyPriority") {
+            await publishPowerStreamCommand(body.sn, {
+              kind: "supplyPriority",
+              priority: (body.priority ?? 0) as 0 | 1,
+            });
+          } else if (body.kind === "batUpper") {
+            await publishPowerStreamCommand(body.sn, {
+              kind: "batUpper",
+              percent: body.percent ?? 95,
+            });
+          } else if (body.kind === "batLower") {
+            await publishPowerStreamCommand(body.sn, {
+              kind: "batLower",
+              percent: body.percent ?? 20,
+            });
+          } else if (body.kind === "feedProtect") {
+            await publishPowerStreamCommand(body.sn, {
+              kind: "feedProtect",
+              enabled: !!body.enabled,
+            });
+          } else {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "kind inconnu" }));
+            return;
+          }
+          log.info("powerstream cmd published", body);
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        }
         return;
       }
 
