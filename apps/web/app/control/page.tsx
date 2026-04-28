@@ -25,6 +25,37 @@ async function saveControl(formData: FormData) {
   revalidatePath("/");
 }
 
+function Field({
+  label,
+  name,
+  defaultValue,
+  type = "number",
+  unit,
+}: {
+  label: string;
+  name: string;
+  defaultValue: string | number;
+  type?: string;
+  unit?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5 text-sm">
+      <span className="text-xs text-zinc-400">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          name={name}
+          type={type}
+          defaultValue={defaultValue}
+          className="input-base flex-1 min-w-0"
+        />
+        {unit && (
+          <span className="text-xs text-zinc-500 w-6 text-right">{unit}</span>
+        )}
+      </div>
+    </label>
+  );
+}
+
 export default async function ControlPage() {
   const c = (await prisma.controlState.findUnique({
     where: { key: "default" },
@@ -41,24 +72,23 @@ export default async function ControlPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-semibold">Pilotage</h1>
-      <p className="text-sm text-zinc-400">
-        Mode <code>FOLLOW_LOAD</code> : la batterie ajuste sa puissance
-        d'injection AC pour suivre la consommation maison (auto-conso, zéro
-        export).
-      </p>
+    <div className="space-y-5 sm:space-y-6 max-w-3xl mx-auto">
+      <div>
+        <h1 className="page-h1">Pilotage</h1>
+        <p className="page-sub mt-1">
+          Mode <code className="text-emerald-400">FOLLOW_LOAD</code> : la batterie
+          ajuste sa puissance d&rsquo;injection AC pour suivre la consommation
+          maison (auto-conso, zéro export).
+        </p>
+      </div>
 
-      <form
-        action={saveControl}
-        className="bg-zinc-900 ring-1 ring-zinc-800 rounded-2xl p-4 space-y-4"
-      >
-        <label className="flex items-center justify-between gap-4">
-          <span>Mode</span>
+      <form action={saveControl} className="card space-y-5">
+        <label className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+          <span className="text-sm text-zinc-300">Mode</span>
           <select
             name="mode"
             defaultValue={c.mode}
-            className="bg-zinc-800 rounded px-3 py-2"
+            className="input-base sm:w-72"
           >
             <option value="MANUAL">Manuel</option>
             <option value="RULES">Règles</option>
@@ -67,93 +97,33 @@ export default async function ControlPage() {
           </select>
         </label>
 
-        <fieldset className="border border-zinc-800 rounded p-3 space-y-3">
-          <legend className="text-xs uppercase text-zinc-500 px-2">
+        <fieldset className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 space-y-4">
+          <legend className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 px-2">
             Suivi de charge
           </legend>
-          <label className="flex items-center justify-between gap-4">
-            <span>Offset sous la conso (W)</span>
-            <input
-              name="offsetW"
-              type="number"
-              defaultValue={c.followLoadOffsetW}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span>Puissance min (W)</span>
-            <input
-              name="minW"
-              type="number"
-              defaultValue={c.followLoadMinW}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span>Puissance max (W)</span>
-            <input
-              name="maxW"
-              type="number"
-              defaultValue={c.followLoadMaxW}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span>Charge max (W)</span>
-            <input
-              name="chargeMaxW"
-              type="number"
-              defaultValue={(c as { chargeMaxW?: number }).chargeMaxW ?? 800}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span>Charge min — seuil prise (W)</span>
-            <input
-              name="chargeMinW"
-              type="number"
-              defaultValue={(c as { chargeMinW?: number }).chargeMinW ?? 400}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span>Marge sur surplus (W)</span>
-            <input
-              name="chargeOffsetW"
-              type="number"
-              defaultValue={(c as { chargeOffsetW?: number }).chargeOffsetW ?? 100}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Offset sous la conso" name="offsetW" defaultValue={c.followLoadOffsetW} unit="W" />
+            <Field label="Puissance min" name="minW" defaultValue={c.followLoadMinW} unit="W" />
+            <Field label="Puissance max" name="maxW" defaultValue={c.followLoadMaxW} unit="W" />
+            <Field label="Charge max" name="chargeMaxW" defaultValue={(c as { chargeMaxW?: number }).chargeMaxW ?? 800} unit="W" />
+            <Field label="Charge min — seuil prise" name="chargeMinW" defaultValue={(c as { chargeMinW?: number }).chargeMinW ?? 400} unit="W" />
+            <Field label="Marge sur surplus" name="chargeOffsetW" defaultValue={(c as { chargeOffsetW?: number }).chargeOffsetW ?? 100} unit="W" />
+          </div>
         </fieldset>
 
-        <fieldset className="border border-zinc-800 rounded p-3 space-y-3">
-          <legend className="text-xs uppercase text-zinc-500 px-2">
+        <fieldset className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 space-y-4">
+          <legend className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 px-2">
             Bornes SoC
           </legend>
-          <label className="flex items-center justify-between gap-4">
-            <span>SoC min décharge (%)</span>
-            <input
-              name="minSoc"
-              type="number"
-              defaultValue={c.minDischargeSoc}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span>SoC max charge (%)</span>
-            <input
-              name="maxSoc"
-              type="number"
-              defaultValue={c.maxChargeSoc}
-              className="bg-zinc-800 rounded px-3 py-2 w-32"
-            />
-          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="SoC min décharge" name="minSoc" defaultValue={c.minDischargeSoc} unit="%" />
+            <Field label="SoC max charge" name="maxSoc" defaultValue={c.maxChargeSoc} unit="%" />
+          </div>
         </fieldset>
 
-        <button className="bg-emerald-600 hover:bg-emerald-500 rounded px-4 py-2">
-          Enregistrer
-        </button>
+        <div className="flex justify-end">
+          <button className="btn-primary">Enregistrer</button>
+        </div>
       </form>
     </div>
   );

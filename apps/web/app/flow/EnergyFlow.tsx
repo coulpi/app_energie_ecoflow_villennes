@@ -208,12 +208,12 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
 
   return (
     <div
+      className="flow-root-pad"
       style={{
         minHeight: "100vh",
         background: `radial-gradient(circle at 20% 0%, #0e1220 0%, ${C.bg} 50%, ${C.bg2} 100%)`,
         color: C.text,
         font: "400 14px ui-sans-serif, system-ui, -apple-system, sans-serif",
-        padding: "28px 32px 40px",
       }}
     >
       <style>{`
@@ -222,19 +222,24 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
           70%  { transform: scale(2.4); opacity: 0;   }
           100% { transform: scale(2.4); opacity: 0;   }
         }
+        .flow-root-pad { padding: 28px 32px 40px; }
+        .flow-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 14px; }
+        .flow-main-grid { display: grid; grid-template-columns: 1fr 320px; gap: 14px; margin-top: 14px; }
+        .flow-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        @media (max-width: 1024px) {
+          .flow-main-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+          .flow-root-pad { padding: 16px 14px 96px; }
+          .flow-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+          .flow-footer { flex-direction: column; align-items: flex-start; }
+        }
       `}</style>
       <div style={{ maxWidth: 1320, margin: "0 auto" }}>
         <Header />
         <StatusBanner scenario={scenario} />
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 14,
-            marginTop: 14,
-          }}
-        >
+        <div className="flow-kpi-grid">
           <KpiCard
             label="PRODUCTION SOLAIRE"
             color={C.solar}
@@ -295,14 +300,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
           />
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 320px",
-            gap: 14,
-            marginTop: 14,
-          }}
-        >
+        <div className="flow-main-grid">
           <div
             style={{
               position: "relative",
@@ -361,13 +359,11 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
         </div>
 
         <div
+          className="flow-footer"
           style={{
             marginTop: 24,
             font: "400 11px ui-sans-serif, system-ui",
             color: C.textMute,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
           }}
         >
           <span>Données mises à jour en temps réel · {new Date(snap.ts).toLocaleTimeString("fr-FR")}</span>

@@ -9,3 +9,58 @@
 html, body {
   @apply bg-zinc-950 text-zinc-100 antialiased;
 }
+
+/* Fond ambient cohérent avec la page Flow */
+body {
+  background:
+    radial-gradient(circle at 20% 0%, #0e1220 0%, #07080c 50%, #0c0e14 100%);
+  background-attachment: fixed;
+}
+
+@layer components {
+  /* Carte standard, style "flow" */
+  .card {
+    @apply rounded-2xl border border-white/[0.07] bg-white/[0.03]
+           backdrop-blur-sm shadow-[0_1px_0_rgba(255,255,255,0.03)_inset]
+           p-4 sm:p-5;
+  }
+
+  .card-hi {
+    @apply rounded-2xl border border-white/[0.10] bg-gradient-to-b
+           from-white/[0.05] to-white/[0.02] p-4 sm:p-5;
+  }
+
+  /* En-tête de page commun */
+  .page-h1 {
+    @apply text-xl sm:text-2xl font-semibold tracking-tight;
+  }
+
+  .page-sub {
+    @apply text-xs sm:text-sm text-zinc-400;
+  }
+
+  /* Champs de formulaire homogènes */
+  .input-base {
+    @apply bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm
+           text-zinc-100 outline-none focus:border-emerald-600
+           focus:ring-1 focus:ring-emerald-600/40 transition;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg
+           px-3 py-2 text-sm font-medium transition disabled:opacity-50
+           disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-emerald-600 hover:bg-emerald-500 text-white;
+  }
+  .btn-ghost {
+    @apply btn bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800;
+  }
+
+  /* Tags */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2 py-0.5
+           text-[11px] uppercase tracking-wide font-semibold border;
+  }
+}

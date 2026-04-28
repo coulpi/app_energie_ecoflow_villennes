@@ -12,49 +12,56 @@ export default async function HistoryPage() {
   });
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Historique (7 derniers jours)</h1>
-      <p className="text-sm text-zinc-400">
-        Agrégats horaires. Les graphiques arriveront dans une itération
-        ultérieure (recharts est déjà installé).
-      </p>
-      <div className="overflow-x-auto">
-        <table className="text-sm w-full">
-          <thead className="text-zinc-400">
-            <tr>
-              <th className="text-left p-2">Heure</th>
-              <th className="text-left p-2">Équipement</th>
-              <th className="text-right p-2">Moy. W</th>
-              <th className="text-right p-2">Prod Wh</th>
-              <th className="text-right p-2">Conso Wh</th>
-              <th className="text-right p-2">SoC min/max</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id.toString()} className="border-t border-zinc-800">
-                <td className="p-2 font-mono">
-                  {r.hourTs.toISOString().slice(0, 16).replace("T", " ")}
-                </td>
-                <td className="p-2">{r.device.name}</td>
-                <td className="p-2 text-right tabular-nums">
-                  {r.avgPowerW?.toFixed(0) ?? "—"}
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {r.prodWh?.toFixed(0) ?? "—"}
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {r.consoWh?.toFixed(0) ?? "—"}
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {r.minSoc !== null && r.maxSoc !== null
-                    ? `${r.minSoc.toFixed(0)} / ${r.maxSoc.toFixed(0)}`
-                    : "—"}
-                </td>
+    <div className="space-y-5 sm:space-y-6 max-w-6xl mx-auto">
+      <div>
+        <h1 className="page-h1">Historique</h1>
+        <p className="page-sub mt-1">
+          Agrégats horaires sur 7 jours. Graphiques bientôt disponibles
+          (recharts déjà installé).
+        </p>
+      </div>
+      <div className="card p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="text-sm w-full min-w-[640px]">
+            <thead className="text-zinc-400 bg-white/[0.02]">
+              <tr>
+                <th className="text-left p-3 font-medium">Heure</th>
+                <th className="text-left p-3 font-medium">Équipement</th>
+                <th className="text-right p-3 font-medium">Moy. W</th>
+                <th className="text-right p-3 font-medium">Prod Wh</th>
+                <th className="text-right p-3 font-medium">Conso Wh</th>
+                <th className="text-right p-3 font-medium">SoC min/max</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr
+                  key={r.id.toString()}
+                  className="border-t border-white/[0.05] hover:bg-white/[0.02]"
+                >
+                  <td className="p-3 font-mono text-xs whitespace-nowrap">
+                    {r.hourTs.toISOString().slice(0, 16).replace("T", " ")}
+                  </td>
+                  <td className="p-3">{r.device.name}</td>
+                  <td className="p-3 text-right tabular-nums">
+                    {r.avgPowerW?.toFixed(0) ?? "—"}
+                  </td>
+                  <td className="p-3 text-right tabular-nums text-emerald-300">
+                    {r.prodWh?.toFixed(0) ?? "—"}
+                  </td>
+                  <td className="p-3 text-right tabular-nums text-sky-300">
+                    {r.consoWh?.toFixed(0) ?? "—"}
+                  </td>
+                  <td className="p-3 text-right tabular-nums">
+                    {r.minSoc !== null && r.maxSoc !== null
+                      ? `${r.minSoc.toFixed(0)} / ${r.maxSoc.toFixed(0)}`
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

@@ -67,11 +67,11 @@ export default async function LoadsPage() {
   ]);
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <header className="flex items-end justify-between">
+    <div className="space-y-5 sm:space-y-6 max-w-5xl mx-auto">
+      <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Charges récurrentes</h1>
-          <p className="text-xs text-zinc-400 mt-1">
+          <h1 className="page-h1">Charges récurrentes</h1>
+          <p className="page-sub mt-1">
             Configurez les appareils qui consomment par périodes (piscine, PAC,
             voiture, jacuzzi…). Le système détecte automatiquement leurs
             cycles depuis le compteur conso et infère le planning.
