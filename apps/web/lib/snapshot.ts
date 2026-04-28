@@ -152,6 +152,9 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   ]);
 
   let productionW = prod?.powerW ?? null;
+  // Plancher : sous 10 W, le panneau / Tuya remonte du bruit nocturne
+  // (offset capteur, veille onduleur). On force à 0.
+  if (productionW !== null && productionW < 10) productionW = 0;
   let gridW = grid?.powerW ?? null;
   const measuredConsumptionW = cons?.powerW ?? null;
   let consumptionW: number | null = null; // sera calculé par bilan
@@ -174,12 +177,16 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   // le PS injecte physiquement, donc une bonne approximation.
   const psWatts = (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? 0;
   const psPriority = (ctrl as { powerstreamPriority?: number } | null)?.powerstreamPriority ?? 0;
-  if (psPriority === 0 && psWatts > 30) {
-    // Décharge en cours : valeur >= consigne PS (la batterie peut décharger
-    // un peu plus si le BMS le voit, sinon on stabilise à la consigne).
-    if (batteryPowerW === null || batteryPowerW < psWatts - 30) {
-      batteryPowerW = psWatts;
-    }
+  const minDsgSoc = (ctrl as { minDischargeSoc?: number } | null)?.minDischargeSoc ?? 20;
+  const socNow = bat?.soc ?? null;
+  // La consigne PS n'est utilisée que pour COMBLER une mesure BMS absente.
+  // Si le BMS rapporte une valeur (même 0), on lui fait confiance : la
+  // batterie peut très bien avoir coupé (veille, plancher SoC, surchauffe…)
+  // alors que la consigne reste à 400 W côté PowerStream.
+  const psActuallyDischarging =
+    psPriority === 0 && psWatts > 30 && (socNow === null || socNow > minDsgSoc);
+  if (psActuallyDischarging && batteryPowerW === null) {
+    batteryPowerW = psWatts;
   }
 
   // 1) Si l'API privée (BMS) ne donne rien, on tente le bilan énergétique.
@@ -247,7 +254,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   // même si la consigne permanentW est non nulle.
   const rawPsW = (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? 0;
   const psPriorityRaw = (ctrl as { powerstreamPriority?: number } | null)?.powerstreamPriority ?? 0;
-  const psW = psPriorityRaw === 0 ? rawPsW : 0;
+  // Le PS n'injecte réellement que si la batterie décharge (bat.powerW > 0).
+  // On plafonne par la consigne pour éviter les pics BMS transitoires.
+  const psEligible =
+    psPriorityRaw === 0 && (socNow === null || socNow > minDsgSoc) && rawPsW > 30;
+  const batDischargeW = batteryPowerW !== null && batteryPowerW > 30 ? batteryPowerW : 0;
+  const psW = psEligible ? Math.min(rawPsW, batDischargeW) : 0;
   if (productionW !== null && gridW !== null) {
     consumptionW = productionW + gridW + psW;
   } else if (measuredConsumptionW !== null) {
