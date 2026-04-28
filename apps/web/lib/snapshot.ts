@@ -175,19 +175,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   // régulièrement la valeur de décharge AC, ce qui fait clignoter
   // l'affichage entre 0 W et la vraie valeur. Cette consigne est ce que
   // le PS injecte physiquement, donc une bonne approximation.
-  const psWatts = (ctrl as { powerstreamPermanentW?: number } | null)?.powerstreamPermanentW ?? 0;
-  const psPriority = (ctrl as { powerstreamPriority?: number } | null)?.powerstreamPriority ?? 0;
   const minDsgSoc = (ctrl as { minDischargeSoc?: number } | null)?.minDischargeSoc ?? 20;
   const socNow = bat?.soc ?? null;
-  // La consigne PS n'est utilisée que pour COMBLER une mesure BMS absente.
-  // Si le BMS rapporte une valeur (même 0), on lui fait confiance : la
-  // batterie peut très bien avoir coupé (veille, plancher SoC, surchauffe…)
-  // alors que la consigne reste à 400 W côté PowerStream.
-  const psActuallyDischarging =
-    psPriority === 0 && psWatts > 30 && (socNow === null || socNow > minDsgSoc);
-  if (psActuallyDischarging && batteryPowerW === null) {
-    batteryPowerW = psWatts;
-  }
+  // On ne déduit JAMAIS batteryPowerW de la consigne PS : la consigne
+  // ne dit pas si la batterie injecte réellement. Quand le BMS ne pousse
+  // plus (veille profonde après plancher SoC atteint), le PS n'a plus
+  // rien à transmettre, donc afficher 400 W serait mensonger.
 
   // 1) Si l'API privée (BMS) ne donne rien, on tente le bilan énergétique.
   if (
