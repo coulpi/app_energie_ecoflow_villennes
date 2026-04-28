@@ -209,10 +209,153 @@ avec `confidence ∈ [0, 1]`.
 - PowerStream `permanent_watts` : valeur en **dixièmes de W**.
 - PowerStream `supply_priority` : `0 = alimentation`, `1 = stockage`.
 
+## APSystems DS3 — micro-onduleurs PV (passerelle Zigbee custom)
+
+Lecture des micro-onduleurs **APSystems DS3** (et compatibles YC600 / QS1)
+**sans la ECU officielle** (200-400 €). On reproduit son rôle avec une
+passerelle DIY ESP8266 + module Zigbee CC2530+CC2591 (~30 €) qui parle
+le protocole Zigbee propriétaire APSystems et republie les trames en
+**MQTT**. Firmware de référence :
+[`patience4711/read-APSystems-YC600-QS1-DS3`](https://github.com/patience4711/read-APSystems-YC600-QS1-DS3).
+
+Cas d'usage : **2ᵉ maison** (mutualisée via le même repo, déploiement
+Docker séparé sur mini-PC d'occasion type EliteDesk Mini ou ThinkCentre).
+On veut surveiller la santé de **chaque panneau** ET de **chaque
+onduleur** (détection panneau sale / diode bypass HS / onduleur muet).
+
+### Topics MQTT attendus
+
+L'ESP doit publier sur :
+
+- `apsystems/<inverterSn>/data` — payload JSON complet (périodique)
+- `apsystems/<inverterSn>/status` — `online` | `offline` (LWT)
+
+Format du payload `data` (validé Zod dans `packages/shared/src/apsystems.ts`) :
+
+```json
+{
+  "sn": "406000123456",
+  "ts": 1714291200,
+  "online": true,
+  "tempC": 42.3,
+  "acV": 233.1,
+  "acHz": 50.02,
+  "signalDb": -65,
+  "panels": [
+    { "i": 0, "dcV": 35.2, "dcA": 8.1, "pW": 285, "energyWh": 12345 },
+    { "i": 1, "dcV": 35.0, "dcA": 7.9, "pW": 276, "energyWh": 12100 }
+  ]
+}
+```
+
+`panels[].i` = index MPPT (0/1 pour DS3 DUO). 1 onduleur DS3 = 2 panneaux.
+
+### Variables d'env worker
+
+- `APSYSTEMS_MQTT_URL` : ex `mqtt://192.168.1.10:1883` (vide = poller off)
+- `APSYSTEMS_MQTT_USER` / `_PASSWORD` : auth broker (optionnel)
+- `APSYSTEMS_TOPIC_PREFIX` : défaut `apsystems`
+- `APSYSTEMS_MOCK=1` : active un générateur de courbe solaire simulée
+  (`generateMockInverter` dans le shared) pour dev sans matos
+- `APSYSTEMS_MOCK_INTERVAL_S` : période du mock (défaut 15 s)
+
+### Pipeline d'ingestion (`apps/worker/src/pollers/apsystems.ts`)
+
+1. `startApsystemsMqtt` : subscribe `<prefix>/+/data` et `<prefix>/+/status`
+2. À chaque trame, lookup `Device` par `externalId === sn` et
+   `type === APSYSTEMS_INVERTER`. Si absent ou désactivé, ignore.
+3. `ingestInverterMessage` :
+   - Insère N lignes `SolarPanelReading` (1 par panneau) avec valeurs
+     onduleur dupliquées (`acV/acHz/tempC/signalDb`) pour faciliter les
+     requêtes.
+   - Insère **aussi** un `Reading` agrégé (somme des `pW`) pour que
+     l'onduleur tombe dans les agrégats horaires standards
+     (`ReadingHourly`). Le rôle `SOLAR_INVERTER` est distinct de
+     `PRODUCTION_METER` donc l'onduleur n'impacte **pas** le
+     `productionW` du dashboard EcoFlow (séparation propre).
+4. `runHealthChecks` (synchrone à chaque trame) : voir section suivante.
+5. `startApsystemsHealthLoop` (tick 60 s) : `checkSilentInverters` —
+   raise une alerte `INVERTER_SILENT` si dernière `SolarPanelReading`
+   > 10 min.
+
+### Health checks (`HealthAlert` + enums `HealthAlertKind/Severity`)
+
+| Kind | Seuil | Severity | Resolve auto |
+|---|---|---|---|
+| `INVERTER_SILENT` | dernière trame > 10 min | CRITICAL | oui (à la prochaine trame) |
+| `PEER_IMBALANCE` | écart panneaux jumeaux > 25 % et `max ≥ 50 W` | WARN | oui |
+| `OVER_TEMPERATURE` | `tempC > 75` | WARN | oui |
+| `GRID_FREQ_OUT` | `acHz` ∉ [49.5, 50.5] | CRITICAL | oui |
+| `WEAK_SIGNAL` | `signalDb < -85` dBm | INFO | oui |
+| `PANEL_LOW_DC` | (placeholder, à implémenter) | — | — |
+
+Les alertes sont **persistées** ; les alertes en cours sont celles
+avec `resolvedAt = null`. La page `/solar` affiche un bandeau pour
+chacune. À chaque trame, les checks décident raise/resolve.
+
+Logique "jumeaux" : panneaux pairs adjacents (`i=0` ↔ `i=1`,
+`i=2` ↔ `i=3`), correspond aux 2 entrées MPPT d'un DS3 DUO.
+
+### Page `/solar` (`apps/web/app/solar/`)
+
+- Header : production instantanée totale, énergie du jour, nb
+  panneaux/onduleurs.
+- Bandeau d'alertes en cours (couleur selon severity).
+- Pour chaque onduleur (`InverterPanel`) :
+  - Statut OK/silencieux, T°, AC V/Hz, RSSI Zigbee, total W + énergie jour
+  - Grille panneaux (`PanelTile`) : P/V/I, énergie cumulée, ratio vs
+    jumeau (alerte visuelle si ratio < 0.75 ou > 1.33), barre de
+    puissance normalisée à 400 W
+  - Graphe 24h superposé par panneau (recharts `AreaChart`,
+    bucketisation 5 min côté server, max 288 points × N panneaux)
+- État vide : instructions pour créer un device + activer le mode mock.
+
+### Mode mock (dev sans matos)
+
+`generateMockInverter(cfg, now)` dans `packages/shared/src/apsystems.ts` :
+- Profil solaire en cloche centré sur 13h (Europe/Paris), atténué de 7h à 19h
+- Variation nuageuse via `sin(now / 600s)`
+- Léger déséquilibre déterministe par panneau (~5 %, seed = SN+i)
+- Température corrélée à la puissance instantanée
+
+Activation : créer 2 devices `APSYSTEMS_INVERTER` avec SN factices
+(`406000000001`, `...02`) puis `APSYSTEMS_MOCK=1` dans `.env` worker
++ restart. Les valeurs simulées tombent toutes les 15 s dans
+`SolarPanelReading` et le dashboard `/solar`.
+
+### Matériel à acheter (2ᵉ maison)
+
+- **Mini-PC d'occasion** (HP EliteDesk 800 G3 Mini ou Lenovo M720q) :
+  ~120-180 € sur Backmarket / LeBonCoin. x86_64 = compatibilité Docker
+  parfaite, plus solide qu'un Raspberry Pi pour Postgres long terme.
+- **ESP8266 NodeMCU v3** : ~5-8 €
+- **Module Zigbee CC2530+CC2591** (avec PA + antenne externe SMA) : ~10-15 €
+  → **PAS** un CC2530 nu, **PAS** un Sonoff Zigbee 3.0 (incompatible,
+  protocole APSystems custom)
+- **CP2102 USB-TTL** : ~3-5 € (flash CC2530 une fois)
+- **Câbles Dupont** F/F + M/F : ~3-5 €
+- **Tailscale** (gratuit) pour accès distant entre les 2 maisons.
+
+Pré-requis pairing : récupérer les **SN à 12 chiffres** sur l'étiquette
+de chaque DS3 (sous le panneau ou sur la facture).
+
+### Conventions APSystems
+
+- `panelIndex` : 0-based, `panelIndex + 1` à l'affichage utilisateur.
+- DS3 DUO = 2 entrées MPPT par onduleur.
+- Watts : valeurs DC et AC en **W entiers** (pas de dW comme PowerStream).
+- Energie cumulée `energyWh` : depuis le démarrage de l'onduleur, peut
+  reset si le DS3 a été coupé. Ne jamais s'en servir comme « énergie du
+  jour » — calculer plutôt l'intégrale `pW × dt` côté server (méthode
+  utilisée dans `apps/web/app/solar/page.tsx`).
+
 ## Schéma BD `Device`
 
 Rôles enum Prisma : `PRODUCTION_METER`, `CONSUMPTION_METER`, `GRID_METER`,
-`BATTERY`, `BATTERY_AC_SWITCH`, `POWERSTREAM`.
+`BATTERY`, `BATTERY_AC_SWITCH`, `POWERSTREAM`, `SOLAR_INVERTER`.
+
+Types enum Prisma : `TUYA_METER`, `TUYA_SWITCH`, `ECOFLOW_BATTERY`,
+`SHELLY_METER`, `APSYSTEMS_INVERTER`.
 
 `ControlState` (key=`default`) — champs clés ajoutés :
 
