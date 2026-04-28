@@ -22,6 +22,16 @@ const Schema = z.object({
   HOME_LAT: z.coerce.number().default(48.9436),
   HOME_LON: z.coerce.number().default(1.993),
   HOME_TZ: z.string().default("Europe/Paris"),
+  // APSystems : passerelle Zigbee custom (ESP8266+CC2530) qui republie
+  // les onduleurs DS3 en MQTT. Optionnel : si APSYSTEMS_MQTT_URL est
+  // vide, le poller ne démarre pas. APSYSTEMS_MOCK=1 active un
+  // générateur de données simulées pour le dev.
+  APSYSTEMS_MQTT_URL: z.string().optional(),
+  APSYSTEMS_MQTT_USER: z.string().optional(),
+  APSYSTEMS_MQTT_PASSWORD: z.string().optional(),
+  APSYSTEMS_TOPIC_PREFIX: z.string().default("apsystems"),
+  APSYSTEMS_MOCK: z.coerce.boolean().default(false),
+  APSYSTEMS_MOCK_INTERVAL_S: z.coerce.number().int().positive().default(15),
 });
 
 export const env = Schema.parse(process.env);

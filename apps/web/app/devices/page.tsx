@@ -66,6 +66,7 @@ export default async function DevicesPage() {
             <option value="TUYA_SWITCH">Tuya — prise on/off</option>
             <option value="SHELLY_METER">Shelly — compteur (LAN)</option>
             <option value="ECOFLOW_BATTERY">EcoFlow — batterie</option>
+            <option value="APSYSTEMS_INVERTER">APSystems — micro-onduleur (Zigbee)</option>
           </select>
           <select name="role" className="input-base">
             <option value="PRODUCTION_METER">Production (solaire)</option>
@@ -73,6 +74,7 @@ export default async function DevicesPage() {
             <option value="GRID_METER">Réseau (bidirectionnel ±)</option>
             <option value="BATTERY_AC_SWITCH">Prise AC batterie</option>
             <option value="BATTERY">Batterie</option>
+            <option value="SOLAR_INVERTER">Onduleur solaire (par panneau)</option>
           </select>
           <input
             name="externalId"

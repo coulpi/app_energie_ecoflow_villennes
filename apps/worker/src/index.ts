@@ -18,6 +18,11 @@ import { startTuyaPoller } from "./pollers/tuya.js";
 import { startTempoPoller } from "./pollers/tempo.js";
 import { startShellyPoller } from "./pollers/shelly.js";
 import { startEcoFlowMqtt, startEcoFlowPoller } from "./pollers/ecoflow.js";
+import {
+  startApsystemsMqtt,
+  startApsystemsMock,
+  startApsystemsHealthLoop,
+} from "./pollers/apsystems.js";
 import { startRollupScheduler } from "./jobs/rollup.js";
 import { startRulesEngine } from "./rules/engine.js";
 import { startFollowLoadLoop } from "./rules/follow-load.js";
@@ -51,6 +56,20 @@ async function main() {
   startRollupScheduler();
   startLoadDetection();
   startAgentScheduler();
+
+  if (env.APSYSTEMS_MOCK) {
+    startApsystemsMock(env.APSYSTEMS_MOCK_INTERVAL_S);
+  } else if (env.APSYSTEMS_MQTT_URL) {
+    try {
+      await startApsystemsMqtt();
+    } catch (e) {
+      log.warn("apsystems mqtt setup failed", {
+        error: (e as Error).message,
+      });
+    }
+  }
+  startApsystemsHealthLoop();
+
   startHttpServer();
 
   log.info("worker ready");

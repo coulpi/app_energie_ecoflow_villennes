@@ -15,6 +15,7 @@ enum DeviceType {
   TUYA_SWITCH
   ECOFLOW_BATTERY
   SHELLY_METER
+  APSYSTEMS_INVERTER  // micro-onduleur APSystems DS3 (lu via passerelle Zigbee custom)
 }
 
 enum DeviceRole {
@@ -24,6 +25,22 @@ enum DeviceRole {
   BATTERY_AC_SWITCH
   BATTERY
   POWERSTREAM         // micro-onduleur EcoFlow PowerStream (injection grid-tied)
+  SOLAR_INVERTER      // micro-onduleur DC->AC en amont de la production (APSystems DS3 et co.)
+}
+
+enum HealthAlertKind {
+  INVERTER_SILENT     // pas de trame depuis > seuil
+  PEER_IMBALANCE      // déséquilibre entre deux panneaux jumeaux (même MPPT/onduleur)
+  OVER_TEMPERATURE    // T° onduleur au-dessus de la limite
+  GRID_FREQ_OUT       // fréquence AC hors plage 49.5-50.5 Hz
+  WEAK_SIGNAL         // RSSI Zigbee dégradé
+  PANEL_LOW_DC        // tension DC anormalement basse (diode bypass / ombrage chronique)
+}
+
+enum HealthAlertSeverity {
+  INFO
+  WARN
+  CRITICAL
 }
 
 enum RuleActionStatus {
@@ -60,6 +77,51 @@ model Device {
   readings        Reading[]
   hourlyReadings  ReadingHourly[]
   ruleExecutions  RuleExecution[]
+  panelReadings   SolarPanelReading[]
+  healthAlerts    HealthAlert[]
+}
+
+// Lecture instantanée par panneau solaire (par MPPT d'un micro-onduleur).
+// Pour un APSystems DS3 (DUO), il y a 2 panneaux par onduleur (panelIndex 0/1).
+model SolarPanelReading {
+  id          BigInt   @id @default(autoincrement())
+  deviceId    String   // référence à l'onduleur (Device.role = SOLAR_INVERTER)
+  panelIndex  Int      // 0..N — entrée MPPT
+  ts          DateTime @db.Timestamptz(3)
+  dcV         Float?   // tension DC entrée panneau (V)
+  dcA         Float?   // courant DC entrée panneau (A)
+  pW          Float?   // puissance instantanée (W)
+  energyWh    Float?   // énergie cumulée depuis le démarrage de l'onduleur (Wh)
+  acV         Float?   // tension AC réseau côté onduleur
+  acHz        Float?   // fréquence AC
+  tempC       Float?   // température interne onduleur
+  signalDb    Float?   // RSSI Zigbee
+  raw         Json?
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, panelIndex, ts(sort: Desc)])
+  @@index([ts(sort: Desc)])
+}
+
+// Alerte de santé matérielle (panneau / onduleur). Persistée pour l'affichage
+// historique ; les alertes en cours sont celles avec resolvedAt = null.
+model HealthAlert {
+  id         BigInt              @id @default(autoincrement())
+  deviceId   String
+  panelIndex Int?                // null si l'alerte concerne tout l'onduleur
+  kind       HealthAlertKind
+  severity   HealthAlertSeverity @default(WARN)
+  message    String
+  detail     Json?
+  startedAt  DateTime            @default(now()) @db.Timestamptz(3)
+  resolvedAt DateTime?           @db.Timestamptz(3)
+  acknowledgedAt DateTime?       @db.Timestamptz(3)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, resolvedAt])
+  @@index([startedAt(sort: Desc)])
 }
 
 model Reading {

@@ -7,5 +7,6 @@ export * as tempo from "./tempo";
 export * as shelly from "./shelly";
 export * as ollama from "./ollama";
 export * as weather from "./weather";
+export * as apsystems from "./apsystems";
 export * from "./rules-dsl";
 export * from "./time";
