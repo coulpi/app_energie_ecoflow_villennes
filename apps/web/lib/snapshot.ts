@@ -2,6 +2,14 @@ import { prisma } from "./prisma";
 
 const BATTERY_CAPACITY_WH = 2016; // Delta Max 2000
 
+// Cache courte durée de la dernière conso "saine" calculée.
+// Sert de fallback quand le bilan part en négatif à cause d'un déphasage
+// entre pollers Tuya (prod, 30 s) et Shelly (grid, ~qq s) lors d'une
+// variation rapide de production (passage de nuage). On garde la valeur
+// jusqu'à 2 minutes pour couvrir 2-3 ticks Tuya.
+let lastHealthyConsumption: { w: number; ts: number } | null = null;
+const CONSUMPTION_CACHE_TTL_MS = 120_000;
+
 /**
  * Estime la puissance batterie depuis la dérive du SoC.
  * Convention : + = décharge (sortie AC), - = charge.
@@ -257,6 +265,23 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     consumptionW = productionW + gridW + psW;
   } else if (measuredConsumptionW !== null) {
     consumptionW = measuredConsumptionW;
+  }
+
+  // Garde-fou désynchronisation pollers : si le bilan donne un négatif
+  // aberrant (prod sous-mesurée le temps que Tuya rattrape une chute
+  // rapide vue par Shelly), on retombe sur la dernière valeur saine
+  // récente plutôt que d'afficher 0 W.
+  if (consumptionW !== null && consumptionW < 0) {
+    if (
+      lastHealthyConsumption !== null &&
+      Date.now() - lastHealthyConsumption.ts < CONSUMPTION_CACHE_TTL_MS
+    ) {
+      consumptionW = lastHealthyConsumption.w;
+    } else {
+      consumptionW = 0;
+    }
+  } else if (consumptionW !== null && consumptionW >= 0) {
+    lastHealthyConsumption = { w: consumptionW, ts: Date.now() };
   }
   if (productionW === null && consumptionW !== null && gridW !== null) {
     productionW = Math.max(0, consumptionW - gridW - psW);
