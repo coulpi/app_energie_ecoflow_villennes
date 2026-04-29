@@ -37,32 +37,81 @@ const SMOOTH_MIN = 1; // moyenne glissante
 const LAG_MIN = 3; // delta entre maintenant et il y a 3 min
 
 export async function detectLoadsOnce(): Promise<void> {
-  const cons = await prisma.device.findFirst({
-    where: { enabled: true, role: "CONSUMPTION_METER" },
-  });
-  if (!cons) return;
-
   const since = new Date(Date.now() - ANALYSIS_HOURS * 3_600_000);
 
   const profiles = await prisma.loadProfile.findMany({
     where: { enabled: true },
   });
 
-  const rows = await prisma.reading.findMany({
-    where: {
-      deviceId: cons.id,
-      ts: { gte: since },
-      powerW: { not: null },
-    },
-    orderBy: { ts: "asc" },
-    select: { ts: true, powerW: true },
+  // Source de la série conso : on privilegie un CONSUMPTION_METER dédié,
+  // sinon on reconstruit depuis prod + grid (comme /api/loads/live).
+  const cons = await prisma.device.findFirst({
+    where: { enabled: true, role: "CONSUMPTION_METER" },
   });
-  if (rows.length < 30) return;
-
-  const raw: PowerSample[] = rows.map((r) => ({
-    ts: r.ts,
-    w: Math.max(0, r.powerW ?? 0),
-  }));
+  let raw: PowerSample[];
+  if (cons) {
+    const rows = await prisma.reading.findMany({
+      where: {
+        deviceId: cons.id,
+        ts: { gte: since },
+        powerW: { not: null },
+      },
+      orderBy: { ts: "asc" },
+      select: { ts: true, powerW: true },
+    });
+    if (rows.length < 30) return;
+    raw = rows.map((r) => ({
+      ts: r.ts,
+      w: Math.max(0, r.powerW ?? 0),
+    }));
+  } else {
+    const [prodDev, gridDev] = await Promise.all([
+      prisma.device.findFirst({
+        where: { enabled: true, role: "PRODUCTION_METER" },
+      }),
+      prisma.device.findFirst({
+        where: { enabled: true, role: "GRID_METER" },
+      }),
+    ]);
+    if (!prodDev || !gridDev) return;
+    const [prodRows, gridRows] = await Promise.all([
+      prisma.reading.findMany({
+        where: { deviceId: prodDev.id, ts: { gte: since }, powerW: { not: null } },
+        orderBy: { ts: "asc" },
+        select: { ts: true, powerW: true },
+      }),
+      prisma.reading.findMany({
+        where: { deviceId: gridDev.id, ts: { gte: since }, powerW: { not: null } },
+        orderBy: { ts: "asc" },
+        select: { ts: true, powerW: true },
+      }),
+    ]);
+    // Joint par minute (bucketise) : conso ≈ prod + grid_signé.
+    const bucket = (rows: { ts: Date; powerW: number | null }[]) => {
+      const map = new Map<number, number[]>();
+      for (const r of rows) {
+        if (r.powerW === null) continue;
+        const k = Math.floor(r.ts.getTime() / 60_000);
+        const a = map.get(k) ?? [];
+        a.push(r.powerW);
+        map.set(k, a);
+      }
+      const out = new Map<number, number>();
+      for (const [k, vs] of map)
+        out.set(k, vs.reduce((a, b) => a + b, 0) / vs.length);
+      return out;
+    };
+    const pB = bucket(prodRows);
+    const gB = bucket(gridRows);
+    raw = [];
+    for (const [k, p] of pB) {
+      const g = gB.get(k);
+      if (g === undefined) continue;
+      raw.push({ ts: new Date(k * 60_000), w: Math.max(0, p + g) });
+    }
+    raw.sort((a, b) => a.ts.getTime() - b.ts.getTime());
+    if (raw.length < 30) return;
+  }
   const smooth = movingAverage(raw, SMOOTH_MIN);
   const edges = detectEdges(smooth, profiles, LAG_MIN);
 
