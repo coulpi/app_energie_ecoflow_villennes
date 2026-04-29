@@ -351,20 +351,20 @@ function IsoTub({ state }: { state: TubState }) {
         <circle cx="14" cy="13" r="5" fill={power ? "oklch(0.78 0.22 145)" : "oklch(0.4 0.02 250)"} />
         {power && <circle cx="14" cy="13" r="9" fill="oklch(0.78 0.22 145 / 0.4)" style={{ animation: "jcz-led-pulse 2s ease-in-out infinite", transformOrigin: "14px 13px" }} />}
         <text x="28" y="17" fontSize="9" fill="oklch(0.78 0.05 145)" fontFamily="ui-monospace,monospace" letterSpacing="1.5">
-          PWR {power ? "ON" : "OFF"}
+          ALIM. {power ? "ON" : "OFF"}
         </text>
       </g>
 
       {/* Center temperature readout */}
       <g transform={`translate(${cx}, ${cy + 4})`}>
         <rect x="-58" y="-22" width="116" height="44" rx="10" fill="oklch(0.10 0.02 250 / 0.85)" stroke={glow} strokeOpacity="0.6" strokeWidth="1" />
-        <text x="0" y="-4" textAnchor="middle" fontSize="9" fill="oklch(0.7 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">CURRENT</text>
+        <text x="0" y="-4" textAnchor="middle" fontSize="9" fill="oklch(0.7 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">EAU</text>
         <text x="0" y="14" textAnchor="middle" fontSize="20" fill="oklch(0.98 0.02 250)" fontFamily="ui-monospace,monospace" fontWeight="600">
           {currentTempC.toFixed(1)}°
         </text>
       </g>
       <g transform={`translate(${cx}, ${cy - ry - 14})`}>
-        <text x="0" y="0" textAnchor="middle" fontSize="8" fill="oklch(0.6 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">SET {presetTempC}°C</text>
+        <text x="0" y="0" textAnchor="middle" fontSize="8" fill="oklch(0.6 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">CIBLE {presetTempC}°C</text>
       </g>
 
       {!power && <rect x="0" y="0" width="500" height="380" fill="oklch(0.12 0.02 250 / 0.55)" pointerEvents="none" />}
@@ -470,7 +470,7 @@ function TopTub({ state }: { state: TubState }) {
 
       <g transform={`translate(${cx}, ${cy})`}>
         <rect x="-50" y="-18" width="100" height="36" rx="8" fill="oklch(0.10 0.02 250 / 0.85)" stroke={waterGlow(currentTempC)} strokeOpacity="0.6" />
-        <text x="0" y="-2" textAnchor="middle" fontSize="8" fill="oklch(0.7 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">SET {presetTempC}°C</text>
+        <text x="0" y="-2" textAnchor="middle" fontSize="8" fill="oklch(0.7 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">CIBLE {presetTempC}°C</text>
         <text x="0" y="14" textAnchor="middle" fontSize="16" fontWeight="600" fill="oklch(0.98 0.02 250)" fontFamily="ui-monospace,monospace">
           {currentTempC.toFixed(1)}°
         </text>
@@ -571,7 +571,7 @@ function ThreeQuarterTub({ state }: { state: TubState }) {
 
       <g transform={`translate(${cx}, ${cy + 4})`}>
         <rect x="-58" y="-22" width="116" height="44" rx="10" fill="oklch(0.10 0.02 250 / 0.85)" stroke={waterGlow(currentTempC)} strokeOpacity="0.6" />
-        <text x="0" y="-4" textAnchor="middle" fontSize="9" fill="oklch(0.7 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">CURRENT</text>
+        <text x="0" y="-4" textAnchor="middle" fontSize="9" fill="oklch(0.7 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">EAU</text>
         <text x="0" y="14" textAnchor="middle" fontSize="20" fontWeight="600" fill="oklch(0.98 0.02 250)" fontFamily="ui-monospace,monospace">
           {currentTempC.toFixed(1)}°
         </text>
@@ -593,12 +593,12 @@ function JacuzziTub({ view, state }: { view: NonNullable<JacuzziPanelProps["view
 // ---------------------------------------------------------------------------
 
 const ACTION_THEMES: Record<JacuzziFn, { hue: number; label: string; accent: string }> = {
-  power:     { hue: 145, label: "POWER",     accent: "oklch(0.78 0.18 145)" },
-  heater:    { hue:  50, label: "HEATER",    accent: "oklch(0.78 0.18 50)"  },
-  filter:    { hue: 200, label: "FILTER",    accent: "oklch(0.82 0.15 200)" },
+  power:     { hue: 145, label: "ALIM.",     accent: "oklch(0.78 0.18 145)" },
+  heater:    { hue:  50, label: "CHAUFFE",   accent: "oklch(0.78 0.18 50)"  },
+  filter:    { hue: 200, label: "FILTRE",    accent: "oklch(0.82 0.15 200)" },
   jets:      { hue: 230, label: "JETS",      accent: "oklch(0.78 0.16 230)" },
-  bubbles:   { hue: 260, label: "BUBBLES",   accent: "oklch(0.74 0.18 260)" },
-  sanitizer: { hue: 305, label: "SANITIZER", accent: "oklch(0.74 0.20 305)" },
+  bubbles:   { hue: 260, label: "BULLES",    accent: "oklch(0.74 0.18 260)" },
+  sanitizer: { hue: 305, label: "STERILIS.", accent: "oklch(0.74 0.20 305)" },
 };
 
 interface ActionButtonProps {
@@ -760,7 +760,7 @@ function ThermoDial({ presetTempC, currentTempC, onChange, disabled }: ThermoDia
         aria-valuemin={TEMP_MIN}
         aria-valuemax={TEMP_MAX}
         aria-valuenow={presetTempC}
-        aria-label="Set point temperature"
+        aria-label="Temperature de consigne"
         tabIndex={disabled ? -1 : 0}
         onKeyDown={(e) => {
           if (disabled) return;
@@ -797,13 +797,13 @@ function ThermoDial({ presetTempC, currentTempC, onChange, disabled }: ThermoDia
           <circle cx={cx} cy={cy} r={8} fill="oklch(0.96 0.02 250)" stroke={`oklch(0.78 0.18 ${presetHue})`} strokeWidth="2" />
         </g>
 
-        <text x={cx} y={cy - 28} textAnchor="middle" fontSize="9" fill="oklch(0.65 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="3">SET TO</text>
+        <text x={cx} y={cy - 28} textAnchor="middle" fontSize="9" fill="oklch(0.65 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="3">CONSIGNE</text>
         <text x={cx} y={cy + 12} textAnchor="middle" fontSize="44" fontWeight="600" fill="oklch(0.98 0.02 250)" fontFamily="ui-monospace,monospace">
           {presetTempC}°
         </text>
         <text x={cx} y={cy + 32} textAnchor="middle" fontSize="9" fill="oklch(0.6 0.05 250)" fontFamily="ui-monospace,monospace" letterSpacing="2">CELSIUS</text>
         <text x={cx} y={cy + 56} textAnchor="middle" fontSize="10" fill={`oklch(0.78 0.18 ${hueForTemp(currentTempC)})`} fontFamily="ui-monospace,monospace" letterSpacing="2">
-          NOW {currentTempC.toFixed(1)}°
+          EAU {currentTempC.toFixed(1)}°
         </text>
 
         <text x={polar(cx, cy, R + 16, ARC_START)[0]} y={polar(cx, cy, R + 16, ARC_START)[1] + 4} textAnchor="middle" fontSize="9" fill="oklch(0.6 0.05 250)" fontFamily="ui-monospace,monospace">15°</text>
@@ -813,7 +813,7 @@ function ThermoDial({ presetTempC, currentTempC, onChange, disabled }: ThermoDia
       <div className="flex items-center justify-center gap-3 mt-1">
         <button
           type="button"
-          aria-label="Decrease set temperature"
+          aria-label="Diminuer la consigne"
           disabled={disabled || presetTempC <= TEMP_MIN}
           onClick={() => onChange(Math.max(TEMP_MIN, presetTempC - 1))}
           className="w-10 h-10 rounded-full grid place-items-center text-white/80 hover:text-white transition disabled:opacity-30 bg-[oklch(0.20_0.02_250/0.7)] border border-white/10 hover:border-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
@@ -823,7 +823,7 @@ function ThermoDial({ presetTempC, currentTempC, onChange, disabled }: ThermoDia
         <div className="font-mono text-[11px] text-white/50 tracking-widest w-10 text-center">{presetTempC}°C</div>
         <button
           type="button"
-          aria-label="Increase set temperature"
+          aria-label="Augmenter la consigne"
           disabled={disabled || presetTempC >= TEMP_MAX}
           onClick={() => onChange(Math.min(TEMP_MAX, presetTempC + 1))}
           className="w-10 h-10 rounded-full grid place-items-center text-white/80 hover:text-white transition disabled:opacity-30 bg-[oklch(0.20_0.02_250/0.7)] border border-white/10 hover:border-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
@@ -853,7 +853,7 @@ function ConnectivityBanner({ reachable }: { reachable: boolean }) {
           boxShadow: `0 0 8px ${reachable ? "oklch(0.78 0.18 145)" : "oklch(0.72 0.20 25)"}`,
           animation: "jcz-led-pulse 2s ease-in-out infinite",
         }} />
-      {reachable ? "ONLINE" : "OFFLINE"}
+      {reachable ? "EN LIGNE" : "HORS LIGNE"}
     </div>
   );
 }
@@ -869,7 +869,7 @@ function ErrorBanner({ code }: { code: string | null }) {
         boxShadow: "0 0 18px oklch(0.72 0.20 25 / 0.25)",
       }}>
       <span className="w-4 h-4" style={{ color: "oklch(0.85 0.20 25)" }}>{Icons.warn}</span>
-      <span className="opacity-80">FAULT</span>
+      <span className="opacity-80">ERREUR</span>
       <span className="font-semibold">{code}</span>
     </div>
   );
@@ -937,9 +937,9 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
               </svg>
             </div>
             <div>
-              <div className="text-lg sm:text-xl font-semibold tracking-tight">JACUZZI / INTEX-CTRL</div>
+              <div className="text-lg sm:text-xl font-semibold tracking-tight">JACUZZI / PILOTAGE</div>
               <div className="font-mono text-[10px] sm:text-[11px] tracking-[0.22em] text-white/40">
-                NODE {host ?? "—"}
+                MODULE {host ?? "—"}
               </div>
             </div>
           </div>
@@ -974,19 +974,19 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
               boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.04), 0 20px 60px oklch(0 0 0 / 0.5)",
             }}>
             <div className="flex items-center justify-between mb-2">
-              <div className="font-mono text-[11px] tracking-[0.22em] text-white/55">SCHEMATIC · {view.toUpperCase()}</div>
-              <div className="font-mono text-[10px] tracking-[0.18em] text-white/35">live render</div>
+              <div className="font-mono text-[11px] tracking-[0.22em] text-white/55">SCHEMA · {view.toUpperCase()}</div>
+              <div className="font-mono text-[10px] tracking-[0.18em] text-white/35">temps reel</div>
             </div>
             <div className="aspect-[5/3.4] w-full">
               <JacuzziTub view={view} state={{ power, heaterOn, filterOn, jetsOn, bubblesOn, sanitizerOn, currentTempC, presetTempC }} />
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3 font-mono text-[10px] tracking-[0.14em]">
               {([
-                ["PWR", power, "oklch(0.78 0.18 145)"],
-                ["HEAT", heaterOn, "oklch(0.78 0.18 50)"],
-                ["FILT", filterOn, "oklch(0.82 0.15 200)"],
+                ["ALIM.", power, "oklch(0.78 0.18 145)"],
+                ["CHAUF.", heaterOn, "oklch(0.78 0.18 50)"],
+                ["FILT.", filterOn, "oklch(0.82 0.15 200)"],
                 ["JETS", jetsOn, "oklch(0.78 0.16 230)"],
-                ["BUBL", bubblesOn, "oklch(0.74 0.18 260)"],
+                ["BULL.", bubblesOn, "oklch(0.74 0.18 260)"],
                 ["UV", sanitizerOn, "oklch(0.74 0.20 305)"],
               ] as const).map(([k, v, c]) => (
                 <div key={k} className="flex items-center gap-2 px-2 py-1.5 rounded-md"
@@ -1009,7 +1009,7 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
               boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.04), 0 20px 60px oklch(0 0 0 / 0.5)",
             }}>
             <div className="w-full flex items-center justify-between mb-2">
-              <div className="font-mono text-[11px] tracking-[0.22em] text-white/55">SETPOINT</div>
+              <div className="font-mono text-[11px] tracking-[0.22em] text-white/55">CONSIGNE</div>
               <div className="font-mono text-[10px] tracking-[0.18em] text-white/35">15° – 40°</div>
             </div>
             <ThermoDial
@@ -1027,8 +1027,8 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
               boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.04), 0 20px 60px oklch(0 0 0 / 0.5)",
             }}>
             <div className="flex items-center justify-between mb-3">
-              <div className="font-mono text-[11px] tracking-[0.22em] text-white/55">SUBSYSTEMS</div>
-              <div className="font-mono text-[10px] tracking-[0.18em] text-white/35">tap to toggle</div>
+              <div className="font-mono text-[11px] tracking-[0.22em] text-white/55">COMMANDES</div>
+              <div className="font-mono text-[10px] tracking-[0.18em] text-white/35">cliquez pour activer</div>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
               <ActionButton name="power"     on={power}       busy={busy.power}     disabled={offline} onClick={(on) => handleToggle("power", on)} />
