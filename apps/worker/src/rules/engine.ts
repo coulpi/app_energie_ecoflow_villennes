@@ -45,6 +45,29 @@ export async function buildSnapshot(now = new Date()): Promise<MetricSnapshot> {
   const battery = await lastReading("BATTERY");
   const sw = await lastReading("BATTERY_AC_SWITCH");
 
+  // Sticky SoC : le BMS Delta Max ne pousse pas le SoC à chaque tick MQTT.
+  // Sans ça, soc=null régulièrement, et le follow-load interprète "SoC
+  // inconnu" comme "charge autorisée" — on garde la prise allumée même
+  // batterie pleine. On remonte jusqu'à 6h pour la dernière valeur connue.
+  let battery_soc: number | null = battery?.soc ?? null;
+  if (battery_soc === null) {
+    const bat = await prisma.device.findFirst({
+      where: { enabled: true, role: "BATTERY" as never },
+    });
+    if (bat) {
+      const last = await prisma.reading.findFirst({
+        where: {
+          deviceId: bat.id,
+          soc: { not: null },
+          ts: { gte: new Date(now.getTime() - 6 * 3_600_000) },
+        },
+        orderBy: { ts: "desc" },
+        select: { soc: true },
+      });
+      battery_soc = last?.soc ?? null;
+    }
+  }
+
   let production_W = prod?.powerW ?? null;
   let grid_W = grid?.powerW ?? null;
   let consumption_W = cons?.powerW ?? null;
@@ -71,7 +94,7 @@ export async function buildSnapshot(now = new Date()): Promise<MetricSnapshot> {
     consumption_W,
     grid_W,
     surplus_W,
-    battery_soc: battery?.soc ?? null,
+    battery_soc,
     switch_state: sw?.switchOn ?? null,
     tariffPeriod,
     now,

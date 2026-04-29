@@ -175,6 +175,18 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   // la mesure AC réelle en entrée de batterie.
   if (sw?.switchOn === true && sw.powerW !== null && sw.powerW > 30) {
     batteryPowerW = -sw.powerW;
+  } else if (
+    // Prise ON mais ne tire quasi rien : la batterie ne charge plus
+    // (typiquement SoC=100% atteint). Le BMS peut continuer à pousser
+    // une ancienne valeur de charge (-2200 W stale) tant qu'il ne
+    // refresh pas. La mesure prise AC est plus fiable : on force 0.
+    sw?.switchOn === true &&
+    sw.powerW !== null &&
+    sw.powerW < 30 &&
+    batteryPowerW !== null &&
+    batteryPowerW < -30
+  ) {
+    batteryPowerW = 0;
   }
 
   // (0bis) Décharge via PowerStream : si on a une consigne d'injection
