@@ -204,7 +204,38 @@ export async function GET() {
 
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;
 
-  const profilesOut = profiles.map((p) => {
+  // Détection combinatoire : on cherche le sous-ensemble de profils
+  // dont la somme des expectedPowerW est la plus proche de deltaW.
+  // Évite que jacuzzi (1900) + pompe (500) = 2400 fasse aussi matcher
+  // la voiture électrique (2400) parce que le code regardait chaque
+  // profil indépendamment. N profils → 2^N combinaisons (max ~1024
+  // pour 10 profils, négligeable).
+  let bestMask = 0;
+  let bestDistance = Infinity;
+  if (deltaW !== null && profiles.length > 0 && profiles.length <= 16) {
+    const total = 1 << profiles.length;
+    for (let mask = 0; mask < total; mask++) {
+      let sum = 0;
+      for (let i = 0; i < profiles.length; i++) {
+        if (mask & (1 << i)) sum += profiles[i]!.expectedPowerW;
+      }
+      const dist = Math.abs(deltaW - sum);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        bestMask = mask;
+      }
+    }
+  }
+  // Tolérance globale du sous-ensemble : somme des tolérances des
+  // profils retenus, plancher 100 W. Si l'écart dépasse, on considère
+  // qu'aucun appareil ne matche bien (delta inexpliqué).
+  let bestSubsetTolerance = 100;
+  for (let i = 0; i < profiles.length; i++) {
+    if (bestMask & (1 << i)) bestSubsetTolerance += profiles[i]!.toleranceW;
+  }
+  const subsetMatches = bestDistance <= bestSubsetTolerance;
+
+  const profilesOut = profiles.map((p, i) => {
     if (deltaW === null) {
       return {
         id: p.id,
@@ -214,15 +245,18 @@ export async function GET() {
         confidence: 0,
       };
     }
+    const inSubset = (bestMask & (1 << i)) !== 0 && subsetMatches;
     const distance = Math.abs(deltaW - p.expectedPowerW);
-    const within = distance <= p.toleranceW;
-    // Confiance : 1.0 si en plein dans la cible, 0 au bord, négatif au-delà.
-    const confidence = Math.max(0, 1 - distance / Math.max(p.toleranceW, 1));
+    // Confiance affichée par profil : reflète la qualité du fit global
+    // pondérée par la part de ce profil dans le sous-ensemble.
+    const confidence = inSubset
+      ? Math.max(0, 1 - bestDistance / Math.max(bestSubsetTolerance, 1))
+      : Math.max(0, 1 - distance / Math.max(p.toleranceW, 1)) * 0.3;
     return {
       id: p.id,
       name: p.name,
       expectedW: p.expectedPowerW,
-      currentlyOn: within,
+      currentlyOn: inSubset,
       confidence,
     };
   });
