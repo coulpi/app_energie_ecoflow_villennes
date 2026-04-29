@@ -102,7 +102,7 @@ export default function JacuzziPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-w-[1200px] mx-auto">
       <JacuzziPanel
         host={s.host}
         plugName={s.plug.name}
@@ -123,7 +123,7 @@ export default function JacuzziPage() {
         view="iso"
       />
 
-      <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-10 space-y-5">
+      <div className="space-y-5">
         <section className="card p-4 space-y-4">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">
             Mode pilotage

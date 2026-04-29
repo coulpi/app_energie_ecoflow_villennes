@@ -909,7 +909,7 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
   const offline = !reachable;
 
   return (
-    <div className="relative w-full -mx-4 sm:-mx-6 lg:-mx-8 -my-4 sm:-my-6 lg:-my-8 px-3 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8 overflow-hidden text-white rounded-none"
+    <div className="relative w-full overflow-hidden text-white rounded-3xl p-3 sm:p-5 lg:p-6"
       style={{
         background:
           "radial-gradient(60% 80% at 70% 0%, oklch(0.22 0.08 280 / 0.6), transparent 60%)," +
