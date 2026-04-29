@@ -26,6 +26,7 @@ import {
 import { startRollupScheduler } from "./jobs/rollup.js";
 import { startRulesEngine } from "./rules/engine.js";
 import { startFollowLoadLoop } from "./rules/follow-load.js";
+import { startJacuzziLoop } from "./rules/jacuzzi-control.js";
 import { startAgentScheduler } from "./agent/optimizer.js";
 import { startSafetyLoop } from "./agent/safety.js";
 import { startLoadDetection } from "./agent/loads.js";
@@ -52,6 +53,10 @@ async function main() {
 
   startRulesEngine(env.POLL_INTERVAL_SECONDS);
   startFollowLoadLoop(env.POLL_INTERVAL_SECONDS);
+  if (env.INTEX_SPA_ENABLED && env.INTEX_SPA_HOST) {
+    startJacuzziLoop(env.POLL_INTERVAL_SECONDS);
+    log.info("jacuzzi loop started", { host: env.INTEX_SPA_HOST });
+  }
   startSafetyLoop(env.POLL_INTERVAL_SECONDS);
   startRollupScheduler();
   startLoadDetection();

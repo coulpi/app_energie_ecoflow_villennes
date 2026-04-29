@@ -17,6 +17,7 @@ import {
   publishPowerStreamCommand,
 } from "./pollers/ecoflow.js";
 import { getFollowLoadState } from "./rules/follow-load.js";
+import { getJacuzziState } from "./rules/jacuzzi-control.js";
 import { prisma } from "./db.js";
 
 const PORT = 3100;
@@ -252,6 +253,100 @@ export function startHttpServer(): http.Server {
           params: body.params ?? {},
         });
         log.info("ecoflow cmd published", body);
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/jacuzzi/state") {
+        const state = getJacuzziState();
+        const ctrl = (await prisma.controlState.findUnique({
+          where: { key: "default" },
+        })) as Record<string, unknown> | null;
+        const startHoldS = (ctrl?.jacuzziStartHoldS as number | undefined) ?? 120;
+        const stopHoldS = (ctrl?.jacuzziStopHoldS as number | undefined) ?? 300;
+        const now = Date.now();
+        const surplusElapsed =
+          state.surplusHoldStartedAtMs !== null ? now - state.surplusHoldStartedAtMs : null;
+        const gridElapsed =
+          state.gridHoldStartedAtMs !== null ? now - state.gridHoldStartedAtMs : null;
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            host: env.INTEX_SPA_HOST ?? null,
+            enabled: env.INTEX_SPA_ENABLED,
+            reachable: state.reachable,
+            heaterOn: state.heaterOn,
+            currentTempC: state.currentTempC,
+            presetTempC: state.presetTempC,
+            errorCode: state.errorCode,
+            lastError: state.lastError,
+            failureCount: state.failureCount,
+            lastTickAtMs: state.lastTickAtMs,
+            surplusHold: {
+              active: surplusElapsed !== null,
+              elapsedMs: surplusElapsed,
+              targetMs: startHoldS * 1000,
+              remainingMs:
+                surplusElapsed !== null
+                  ? Math.max(0, startHoldS * 1000 - surplusElapsed)
+                  : null,
+            },
+            gridHold: {
+              active: gridElapsed !== null,
+              elapsedMs: gridElapsed,
+              targetMs: stopHoldS * 1000,
+              remainingMs:
+                gridElapsed !== null
+                  ? Math.max(0, stopHoldS * 1000 - gridElapsed)
+                  : null,
+            },
+            ctrl: {
+              jacuzziEnabled: ctrl?.jacuzziEnabled ?? false,
+              jacuzziStartSurplusW: ctrl?.jacuzziStartSurplusW ?? 1500,
+              jacuzziStopGridW: ctrl?.jacuzziStopGridW ?? 300,
+              jacuzziStartHoldS: ctrl?.jacuzziStartHoldS ?? 120,
+              jacuzziStopHoldS: ctrl?.jacuzziStopHoldS ?? 300,
+              jacuzziMinSocPct: ctrl?.jacuzziMinSocPct ?? 40,
+              jacuzziTempoBlockRedHp: ctrl?.jacuzziTempoBlockRedHp ?? true,
+              jacuzziManualOverride: ctrl?.jacuzziManualOverride ?? null,
+            },
+          }),
+        );
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/jacuzzi/control") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Partial<{
+          jacuzziEnabled: boolean;
+          jacuzziStartSurplusW: number;
+          jacuzziStopGridW: number;
+          jacuzziStartHoldS: number;
+          jacuzziStopHoldS: number;
+          jacuzziMinSocPct: number;
+          jacuzziTempoBlockRedHp: boolean;
+          jacuzziManualOverride: boolean | null;
+        }>;
+        const data: Record<string, unknown> = {};
+        for (const k of [
+          "jacuzziEnabled",
+          "jacuzziStartSurplusW",
+          "jacuzziStopGridW",
+          "jacuzziStartHoldS",
+          "jacuzziStopHoldS",
+          "jacuzziMinSocPct",
+          "jacuzziTempoBlockRedHp",
+          "jacuzziManualOverride",
+        ] as const) {
+          if (k in body) data[k] = body[k];
+        }
+        await prisma.controlState.update({
+          where: { key: "default" },
+          data: data as never,
+        });
+        log.info("jacuzzi control updated", data);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
         return;

@@ -90,6 +90,16 @@ const items: { href: string; icon: React.ReactNode; label: string }[] = [
     ),
   },
   {
+    href: "/jacuzzi",
+    label: "Jacuzzi",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <path d="M3 12h18v5a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-5Z" strokeLinejoin="round" />
+        <path d="M7 12V8a2 2 0 0 1 4 0M9 5c0 .8.5 1.5 1.2 2M14 5c0 .8.5 1.5 1.2 2M19 5c0 .8.5 1.5 1.2 2" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/agent",
     label: "Agent IA",
     icon: (

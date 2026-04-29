@@ -333,5 +333,23 @@ model ControlState {
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.
   maxChargeSoc       Int         @default(95)
+  // === Jacuzzi Intex (chauffage piloté par surplus) ===
+  // Si false : la boucle dort, l'utilisateur garde la main via l'app Intex.
+  jacuzziEnabled         Boolean @default(false)
+  // Surplus instantane (W) sous lequel on declenche l'allumage chauffe.
+  // Doit etre > puissance chauffe (~1900 W) - tolerance batterie acceptable.
+  jacuzziStartSurplusW   Int     @default(1500)
+  // Conso reseau (W, gridW > 0 = import) au-dela de laquelle on coupe.
+  jacuzziStopGridW       Int     @default(300)
+  // Maintien (secondes) avant de declencher allumage / coupure.
+  jacuzziStartHoldS      Int     @default(120)
+  jacuzziStopHoldS       Int     @default(300)
+  // SoC batterie sous lequel on refuse d'allumer la chauffe (eviter
+  // de pomper la batterie pour chauffer l'eau a la place du soleil).
+  jacuzziMinSocPct       Int     @default(40)
+  // Bloque l'allumage en HP rouge Tempo (6h-22h sur jour rouge).
+  jacuzziTempoBlockRedHp Boolean @default(true)
+  // Override manuel : null = automatique. true/false = force et fige.
+  jacuzziManualOverride  Boolean?
   updatedAt          DateTime    @updatedAt
 }
