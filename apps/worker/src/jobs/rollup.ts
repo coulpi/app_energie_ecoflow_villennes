@@ -42,6 +42,11 @@ export async function runRollupOnce(now = new Date()): Promise<void> {
       const e = avgPowerW; // 1h → Wh = W
       if (d.role === "PRODUCTION_METER") prodWh = Math.max(0, e);
       else if (d.role === "CONSUMPTION_METER") consoWh = Math.max(0, e);
+      // Les prises mesurant un appareil specifique (jacuzzi, voiture,
+      // etc.) sont aussi des consommateurs : on remplit consoWh pour
+      // qu'elles apparaissent dans l'historique par equipement.
+      else if (d.role === "APPLIANCE" || d.role === "BATTERY_AC_SWITCH")
+        consoWh = Math.max(0, e);
     }
 
     await prisma.readingHourly.upsert({
