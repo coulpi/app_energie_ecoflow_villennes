@@ -950,6 +950,21 @@ function BatteryControl({
   snap: FlowSnapshot;
   scenario: Scenario;
 }) {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    // Par defaut ferme. La preference utilisateur (ouvert/ferme) est
+    // memorisee en localStorage et restauree aux navigations suivantes.
+    if (typeof window === "undefined") return true;
+    const v = window.localStorage.getItem("flow.batteryControl.collapsed");
+    if (v === null) return true;
+    return v === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "flow.batteryControl.collapsed",
+      collapsed ? "1" : "0",
+    );
+  }, [collapsed]);
   const acOn = snap.switchOn === true;
   const acUnknown = snap.switchOn === null;
   const acPower = Math.max(0, Math.round(snap.acSwitchPowerW ?? 0));
@@ -1121,17 +1136,46 @@ function BatteryControl({
         padding: 18,
       }}
     >
-      <div
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        aria-expanded={!collapsed}
         style={{
+          width: "100%",
           font: "600 9.5px ui-sans-serif, system-ui",
           color: C.textDim,
           letterSpacing: "0.14em",
-          marginBottom: 14,
+          marginBottom: collapsed ? 0 : 14,
+          background: "transparent",
+          border: 0,
+          padding: 0,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          textAlign: "left",
         }}
       >
-        PILOTAGE BATTERIE
-      </div>
-
+        <span>PILOTAGE BATTERIE</span>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 18,
+            height: 18,
+            borderRadius: 4,
+            color: C.text,
+            fontSize: 11,
+            transition: "transform 200ms ease",
+            transform: collapsed ? "rotate(0deg)" : "rotate(180deg)",
+          }}
+        >
+          ▾
+        </span>
+      </button>
+      {collapsed ? null : (
+      <>
       <div
         style={{
           display: "flex",
@@ -1631,6 +1675,8 @@ function BatteryControl({
           </button>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
