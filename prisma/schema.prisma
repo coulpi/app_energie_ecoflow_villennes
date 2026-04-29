@@ -26,6 +26,7 @@ enum DeviceRole {
   BATTERY
   POWERSTREAM         // micro-onduleur EcoFlow PowerStream (injection grid-tied)
   SOLAR_INVERTER      // micro-onduleur DC->AC en amont de la production (APSystems DS3 et co.)
+  APPLIANCE           // prise / capteur d'un appareil non structurel (jacuzzi, voiture, etc.)
 }
 
 enum HealthAlertKind {
