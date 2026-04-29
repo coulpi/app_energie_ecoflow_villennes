@@ -3,6 +3,7 @@ import HistoryChart, { type HistoryPoint } from "./HistoryChart";
 import AppliancesChart, { type AppliancePoint } from "./AppliancesChart";
 import AppliancesHourlyChart, {
   type ApplianceHourlyPoint,
+  type DayBoundary,
 } from "./AppliancesHourlyChart";
 
 export const dynamic = "force-dynamic";
@@ -240,6 +241,25 @@ export default async function HistoryPage() {
   const usedHourlyNames = deviceNames.filter((n) =>
     hourlyPoints.some((pt) => (pt[n] as number) > 0),
   );
+  // Frontières de jour (minuit Europe/Paris) sur la fenêtre 48h.
+  // L'axe X utilise l'étiquette "HH" (00 h, 01 h…) — on récupère donc
+  // les points dont l'heure locale est 00 h, et on associe la date.
+  const hourlyDayBoundaries: DayBoundary[] = hourKeys
+    .filter((h) => {
+      const lh = h.ts.toLocaleTimeString("fr-FR", {
+        timeZone: "Europe/Paris",
+        hour: "2-digit",
+      });
+      return lh.startsWith("00");
+    })
+    .map((h) => ({
+      label: h.label,
+      dateLabel: h.ts.toLocaleDateString("fr-FR", {
+        timeZone: "Europe/Paris",
+        day: "2-digit",
+        month: "2-digit",
+      }),
+    }));
 
   // Lignes du tableau : 200 dernières
   const lastRows = [...rows]
@@ -291,6 +311,7 @@ export default async function HistoryPage() {
         <AppliancesHourlyChart
           data={hourlyPoints}
           deviceNames={usedHourlyNames}
+          dayBoundaries={hourlyDayBoundaries}
         />
       )}
 

@@ -2,9 +2,11 @@
 
 import {
   CartesianGrid,
+  Label,
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -14,6 +16,11 @@ import {
 export interface ApplianceHourlyPoint {
   label: string;
   [deviceName: string]: number | string;
+}
+
+export interface DayBoundary {
+  label: string; // doit correspondre à un point.label (00 h)
+  dateLabel: string; // ex. "29/04"
 }
 
 const tickStyle = { fill: "#a1a1aa", fontSize: 10 };
@@ -70,9 +77,11 @@ function TooltipContent({
 export default function AppliancesHourlyChart({
   data,
   deviceNames,
+  dayBoundaries = [],
 }: {
   data: ApplianceHourlyPoint[];
   deviceNames: string[];
+  dayBoundaries?: DayBoundary[];
 }) {
   return (
     <div className="card p-3 sm:p-4">
@@ -107,6 +116,23 @@ export default function AppliancesHourlyChart({
               wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
               iconType="circle"
             />
+            {dayBoundaries.map((b) => (
+              <ReferenceLine
+                key={b.label}
+                x={b.label}
+                stroke="rgba(255,255,255,0.25)"
+                strokeDasharray="3 3"
+                ifOverflow="extendDomain"
+              >
+                <Label
+                  value={b.dateLabel}
+                  position="insideTop"
+                  fill="#a1a1aa"
+                  fontSize={10}
+                  offset={4}
+                />
+              </ReferenceLine>
+            ))}
             {deviceNames.map((name, i) => (
               <Line
                 key={name}
