@@ -62,7 +62,7 @@ export default function JacuzziPage() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 5000);
+    const id = setInterval(refresh, 3000);
     return () => clearInterval(id);
   }, []);
 
@@ -107,6 +107,7 @@ export default function JacuzziPage() {
         host={s.host}
         plugName={s.plug.name}
         plugPowerW={s.plug.powerW}
+        plugTs={s.plug.ts}
         power={s.power ?? false}
         heaterOn={s.heaterOn ?? false}
         filterOn={s.filterOn ?? false}

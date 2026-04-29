@@ -53,6 +53,8 @@ export interface JacuzziPanelProps {
   plugName?: string | null;
   /** Puissance instantanee mesuree par la prise Tuya (W). */
   plugPowerW?: number | null;
+  /** ISO timestamp de la derniere lecture de la prise Tuya. */
+  plugTs?: string | null;
 }
 
 interface TubState {
@@ -884,8 +886,17 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
     power, heaterOn, filterOn, jetsOn, bubblesOn, sanitizerOn,
     currentTempC, presetTempC, reachable, errorCode,
     onToggle, onSetPresetTemp, view = "iso",
-    host, plugName, plugPowerW,
+    host, plugName, plugPowerW, plugTs,
   } = props;
+
+  // Tick chaque seconde pour rafraichir l'age affiche du dernier reading.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const ageS = plugTs ? Math.max(0, Math.floor((now - new Date(plugTs).getTime()) / 1000)) : null;
+  const stale = ageS !== null && ageS > 60;
 
   const [busy, setBusy] = useState<Partial<Record<JacuzziFn, boolean>>>({});
 
@@ -936,12 +947,17 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
             {plugPowerW !== null && plugPowerW !== undefined && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full font-mono text-[11px] tracking-[0.18em] backdrop-blur"
                 style={{
-                  background: "oklch(0.22 0.08 75 / 0.5)",
-                  border: "1px solid oklch(0.78 0.18 75 / 0.5)",
-                  color: "oklch(0.95 0.10 75)",
+                  background: stale ? "oklch(0.22 0.06 30 / 0.5)" : "oklch(0.22 0.08 75 / 0.5)",
+                  border: `1px solid ${stale ? "oklch(0.72 0.16 30 / 0.5)" : "oklch(0.78 0.18 75 / 0.5)"}`,
+                  color: stale ? "oklch(0.92 0.12 30)" : "oklch(0.95 0.10 75)",
                 }}>
                 <span className="opacity-70">{plugName ?? "PLUG"}</span>
                 <span className="font-semibold">{Math.round(plugPowerW)} W</span>
+                {ageS !== null && (
+                  <span className="opacity-50 text-[10px]">
+                    · {ageS < 60 ? `${ageS}s` : `${Math.floor(ageS / 60)}min`}
+                  </span>
+                )}
               </div>
             )}
             <ConnectivityBanner reachable={reachable} />
