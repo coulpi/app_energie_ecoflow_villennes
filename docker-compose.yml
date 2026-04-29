@@ -27,6 +27,11 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-EcoFlow Villennes}
       WORKER_INTERNAL_URL: http://worker:3100
+      # Credentials Tuya pour le bouton "Tester" sur /devices (poll one-shot
+      # depuis le process Next).
+      TUYA_CLIENT_ID: ${TUYA_CLIENT_ID:-}
+      TUYA_CLIENT_SECRET: ${TUYA_CLIENT_SECRET:-}
+      TUYA_API_BASE: ${TUYA_API_BASE:-}
       TZ: Europe/Paris
     depends_on:
       postgres:
