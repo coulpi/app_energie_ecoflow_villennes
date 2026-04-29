@@ -22,7 +22,12 @@ import { env } from "../env.js";
 import { buildSnapshot } from "./engine.js";
 
 interface JacuzziLiveState {
+  power: boolean | null;
   heaterOn: boolean | null;
+  filterOn: boolean | null;
+  jetsOn: boolean | null;
+  bubblesOn: boolean | null;
+  sanitizerOn: boolean | null;
   currentTempC: number | null;
   presetTempC: number | null;
   errorCode: string | null;
@@ -35,7 +40,12 @@ interface JacuzziLiveState {
 }
 
 const live: JacuzziLiveState = {
+  power: null,
   heaterOn: null,
+  filterOn: null,
+  jetsOn: null,
+  bubblesOn: null,
+  sanitizerOn: null,
   currentTempC: null,
   presetTempC: null,
   errorCode: null,
@@ -46,6 +56,50 @@ const live: JacuzziLiveState = {
   failureCount: 0,
   reachable: false,
 };
+
+function syncLiveFromStatus(s: intexSpa.IntexSpaStatus): void {
+  live.power = s.power;
+  live.heaterOn = s.heater;
+  live.filterOn = s.filter;
+  live.jetsOn = s.jets;
+  live.bubblesOn = s.bubbles;
+  live.sanitizerOn = s.sanitizer;
+  live.currentTempC = s.currentTemp;
+  live.presetTempC = s.presetTemp;
+  live.errorCode = s.errorCode;
+}
+
+export type IntexFunction = "power" | "heater" | "filter" | "jets" | "bubbles" | "sanitizer";
+
+export async function setJacuzziFunction(fn: IntexFunction, on: boolean): Promise<intexSpa.IntexSpaStatus> {
+  const c = getClient();
+  if (!c) throw new Error("INTEX_SPA_HOST non defini");
+  let s: intexSpa.IntexSpaStatus;
+  switch (fn) {
+    case "power": s = await c.setPower(on); break;
+    case "heater": s = await c.setHeater(on); break;
+    case "filter": s = await c.setFilter(on); break;
+    case "jets": s = await c.setJets(on); break;
+    case "bubbles": s = await c.setBubbles(on); break;
+    case "sanitizer": s = await c.setSanitizer(on); break;
+  }
+  syncLiveFromStatus(s);
+  live.reachable = true;
+  live.lastError = null;
+  live.failureCount = 0;
+  return s;
+}
+
+export async function setJacuzziPresetTemp(temp: number): Promise<intexSpa.IntexSpaStatus> {
+  const c = getClient();
+  if (!c) throw new Error("INTEX_SPA_HOST non defini");
+  const s = await c.setPresetTemp(temp);
+  syncLiveFromStatus(s);
+  live.reachable = true;
+  live.lastError = null;
+  live.failureCount = 0;
+  return s;
+}
 
 let client: intexSpa.IntexSpaClient | null = null;
 
@@ -108,10 +162,7 @@ async function refreshStatus(): Promise<boolean> {
   if (!c) return false;
   try {
     const s = await c.getStatus();
-    live.heaterOn = s.heater;
-    live.currentTempC = s.currentTemp;
-    live.presetTempC = s.presetTemp;
-    live.errorCode = s.errorCode;
+    syncLiveFromStatus(s);
     live.reachable = true;
     live.lastError = null;
     live.failureCount = 0;
@@ -127,17 +178,8 @@ async function refreshStatus(): Promise<boolean> {
 
 async function applyHeater(on: boolean): Promise<void> {
   if (live.heaterOn === on) return;
-  const c = getClient();
-  if (!c) return;
   try {
-    const s = await c.setHeater(on);
-    live.heaterOn = s.heater;
-    live.currentTempC = s.currentTemp;
-    live.presetTempC = s.presetTemp;
-    live.errorCode = s.errorCode;
-    live.reachable = true;
-    live.lastError = null;
-    live.failureCount = 0;
+    const s = await setJacuzziFunction("heater", on);
     log.info("jacuzzi: heater applied", { on, actual: s.heater, tempC: s.currentTemp });
   } catch (e) {
     live.lastError = (e as Error).message;

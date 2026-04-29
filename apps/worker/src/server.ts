@@ -17,7 +17,7 @@ import {
   publishPowerStreamCommand,
 } from "./pollers/ecoflow.js";
 import { getFollowLoadState } from "./rules/follow-load.js";
-import { getJacuzziState } from "./rules/jacuzzi-control.js";
+import { getJacuzziState, setJacuzziFunction, setJacuzziPresetTemp, type IntexFunction } from "./rules/jacuzzi-control.js";
 import { prisma } from "./db.js";
 
 const PORT = 3100;
@@ -258,6 +258,44 @@ export function startHttpServer(): http.Server {
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/jacuzzi/toggle") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          fn: IntexFunction;
+          on: boolean;
+        };
+        try {
+          const s = await setJacuzziFunction(body.fn, !!body.on);
+          log.info("jacuzzi toggle", { fn: body.fn, on: body.on });
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, status: {
+            power: s.power, heater: s.heater, filter: s.filter, jets: s.jets,
+            bubbles: s.bubbles, sanitizer: s.sanitizer,
+            currentTemp: s.currentTemp, presetTemp: s.presetTemp, errorCode: s.errorCode,
+          } }));
+        } catch (e) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        }
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/jacuzzi/preset-temp") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { temp: number };
+        try {
+          const s = await setJacuzziPresetTemp(Number(body.temp));
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, presetTemp: s.presetTemp }));
+        } catch (e) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        }
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/jacuzzi/state") {
         const state = getJacuzziState();
         const ctrl = (await prisma.controlState.findUnique({
@@ -276,7 +314,12 @@ export function startHttpServer(): http.Server {
             host: env.INTEX_SPA_HOST ?? null,
             enabled: env.INTEX_SPA_ENABLED,
             reachable: state.reachable,
+            power: state.power,
             heaterOn: state.heaterOn,
+            filterOn: state.filterOn,
+            jetsOn: state.jetsOn,
+            bubblesOn: state.bubblesOn,
+            sanitizerOn: state.sanitizerOn,
             currentTempC: state.currentTempC,
             presetTempC: state.presetTempC,
             errorCode: state.errorCode,
