@@ -73,7 +73,18 @@ sleep 5
 docker compose exec -T web npx prisma db push --schema=/repo/prisma/schema.prisma --skip-generate || \
   warn "db push a échoué — la base sera peut-être déjà en sync, à vérifier"
 
-# 6. Status final
+# 6. Nettoyage Docker (libère le cache de build, images intermédiaires, etc.)
+# Évite que /var/lib/docker grossisse sans limite à chaque build (~40 GB
+# régulièrement). Ne touche pas aux conteneurs en cours d'exécution ni aux
+# volumes nommés (postgres_data est conservé).
+info "Nettoyage cache Docker (images dangling, build cache)"
+docker_disk_before=$(docker system df --format '{{.Type}}={{.Size}}' | tr '\n' ' ' || echo "?")
+docker system prune -af --filter "until=24h" >/dev/null 2>&1 || warn "docker system prune partiel"
+docker builder prune -af --filter "until=24h" >/dev/null 2>&1 || true
+docker_disk_after=$(docker system df --format '{{.Type}}={{.Size}}' | tr '\n' ' ' || echo "?")
+ok "cache Docker nettoye (avant: $docker_disk_before / apres: $docker_disk_after)"
+
+# 7. Status final
 info "État des services"
 docker compose ps
 
