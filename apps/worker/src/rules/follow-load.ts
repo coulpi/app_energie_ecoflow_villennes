@@ -257,7 +257,8 @@ export async function tickFollowLoad(): Promise<void> {
       })();
       const inWakeupWindow = distanceToEnd >= 0 && distanceToEnd <= wakeupBefore;
 
-      if (inWakeupWindow) {
+      const batteryAlreadyFull = soc !== null && soc >= ctrl.maxChargeSoc;
+      if (inWakeupWindow && !batteryAlreadyFull) {
         log.info("follow-load: tempo wakeup window — réveil batterie", {
           minutesUntilEnd: distanceToEnd,
         });
