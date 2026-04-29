@@ -68,6 +68,9 @@ services:
       HOME_LAT: ${HOME_LAT:-48.9436}
       HOME_LON: ${HOME_LON:-1.993}
       HOME_TZ: ${HOME_TZ:-Europe/Paris}
+      INTEX_SPA_HOST: ${INTEX_SPA_HOST:-}
+      INTEX_SPA_PORT: ${INTEX_SPA_PORT:-8990}
+      INTEX_SPA_ENABLED: ${INTEX_SPA_ENABLED:-false}
       TZ: Europe/Paris
     depends_on:
       postgres:
