@@ -45,16 +45,26 @@ function fmtW(v: number) {
 function TooltipContent({
   active,
   payload,
-  label,
 }: {
   active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string }>;
+  payload?: Array<{
+    name: string;
+    value: number;
+    color: string;
+    payload?: { hourLabel?: string; label?: string };
+  }>;
   label?: string;
 }) {
   if (!active || !payload || payload.length === 0) return null;
+  const meta = payload[0]?.payload;
+  const display = meta?.hourLabel
+    ? meta.label
+      ? `${new Date(meta.label).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit" })} ${meta.hourLabel}`
+      : meta.hourLabel
+    : "";
   return (
     <div className="rounded-lg border border-white/10 bg-zinc-950/95 backdrop-blur px-3 py-2 text-xs shadow-xl min-w-[180px]">
-      <div className="text-zinc-400 mb-1">{label}</div>
+      <div className="text-zinc-400 mb-1">{display}</div>
       {payload
         .slice()
         .sort((a, b) => (b.value || 0) - (a.value || 0))
@@ -99,6 +109,10 @@ export default function AppliancesHourlyChart({
               tickLine={axisLine}
               interval="preserveStartEnd"
               minTickGap={28}
+              tickFormatter={(_value, index) => {
+                const p = data[index];
+                return (p?.hourLabel as string) ?? "";
+              }}
             />
             <YAxis
               tick={tickStyle}

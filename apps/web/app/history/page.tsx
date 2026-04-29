@@ -185,14 +185,18 @@ export default async function HistoryPage() {
       })
     : [];
   // 48 buckets horaires alignés sur l'heure courante.
-  const hourKeys: { ts: Date; key: string; label: string }[] = [];
+  // `label` doit être UNIQUE par bucket (sinon ReferenceLine x=label ne
+  // sait pas a quel point se rattacher quand 00 h apparait deux fois).
+  // L'axe X formate uniquement l'heure via tickFormatter.
+  const hourKeys: { ts: Date; key: string; label: string; hourLabel: string }[] = [];
   for (let i = 47; i >= 0; i--) {
     const d = new Date(Date.now() - i * 3_600_000);
     d.setMinutes(0, 0, 0);
     hourKeys.push({
       ts: d,
       key: d.toISOString(),
-      label: d.toLocaleTimeString("fr-FR", {
+      label: d.toISOString(),
+      hourLabel: d.toLocaleTimeString("fr-FR", {
         timeZone: "Europe/Paris",
         hour: "2-digit",
       }),
@@ -236,6 +240,7 @@ export default async function HistoryPage() {
   }
   const hourlyPoints: ApplianceHourlyPoint[] = hourKeys.map((h) => ({
     label: h.label,
+    hourLabel: h.hourLabel,
     ...(hourBuckets.get(h.key) ?? {}),
   }));
   const usedHourlyNames = deviceNames.filter((n) =>
