@@ -36,7 +36,25 @@ async function seriesFor(
     orderBy: { ts: "asc" },
     select: { ts: true, powerW: true, soc: true },
   });
-  if (rows.length === 0) return [];
+  // Pour le SoC : on amorce le forward-fill avec la derniere valeur
+  // connue AVANT la fenetre. Le BMS Delta Max ne pousse pas le SoC a
+  // chaque tick MQTT, donc une fenetre 60 min peut etre completement
+  // vide alors que le SoC est stable a 100% depuis longtemps.
+  let seed = 0;
+  if (useSoc) {
+    const seedRow = await prisma.reading.findFirst({
+      where: {
+        deviceId: dev.id,
+        ts: { lt: since },
+        soc: { not: null },
+      },
+      orderBy: { ts: "desc" },
+      select: { soc: true },
+    });
+    if (seedRow?.soc !== undefined && seedRow?.soc !== null) seed = seedRow.soc;
+  }
+
+  if (rows.length === 0 && !useSoc) return [];
 
   // Bucketing temporel uniforme : chaque bucket = (now - sinceMs) / buckets.
   const now = Date.now();
@@ -56,7 +74,7 @@ async function seriesFor(
   }
   // Pour les buckets vides on reprend la dernière valeur connue (forward fill)
   // afin d'éviter les trous visuels.
-  let last = 0;
+  let last = seed;
   return sums.map((s, i) => {
     if (counts[i]! > 0) {
       last = s / counts[i]!;
