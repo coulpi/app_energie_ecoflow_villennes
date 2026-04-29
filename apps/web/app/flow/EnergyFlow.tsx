@@ -113,6 +113,8 @@ interface LiveLoadProfile {
   expectedW: number;
   currentlyOn: boolean;
   confidence: number;
+  source?: "measured" | "heuristic" | "out-of-window";
+  measuredW?: number;
 }
 interface LiveLoadPayload {
   currentW: number | null;
@@ -2052,7 +2054,9 @@ function FlowDiagram({
         reverse={homeToBattery > 0}
       />
 
-      {/* Équipements maison : flux animé home → équipement quand ON */}
+      {/* Équipements maison : flux animé home → équipement quand ON.
+          Pour les profils mesurés (prise Tuya), on affiche la puissance
+          live (measuredW). Sinon, on retombe sur expectedW. */}
       {liveLoads?.profiles?.map((p, i) => {
         const x = GEO.equipmentXs[i] ?? 500;
         const y = GEO.equipmentY;
@@ -2061,18 +2065,26 @@ function FlowDiagram({
           { x, y, r: GEO.equipmentR },
           0,
         );
+        const livePower =
+          p.source === "measured" && typeof p.measuredW === "number"
+            ? p.measuredW
+            : p.expectedW;
         return (
           <FlowPath
             key={`eqflow-${p.id}`}
             d={path}
             color={FD.home}
-            power={p.currentlyOn ? p.expectedW : 0}
+            power={p.currentlyOn ? livePower : 0}
           />
         );
       })}
       {liveLoads?.profiles?.map((p, i) => {
         const x = GEO.equipmentXs[i] ?? 500;
         const y = GEO.equipmentY;
+        const livePower =
+          p.source === "measured" && typeof p.measuredW === "number"
+            ? p.measuredW
+            : p.expectedW;
         return (
           <EquipmentNode
             key={`eqnode-${p.id}`}
@@ -2080,7 +2092,7 @@ function FlowDiagram({
             cy={y}
             r={GEO.equipmentR}
             name={p.name}
-            powerW={p.expectedW}
+            powerW={livePower}
             on={p.currentlyOn}
           />
         );
