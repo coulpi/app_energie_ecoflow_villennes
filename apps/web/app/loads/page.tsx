@@ -15,10 +15,19 @@ async function createProfile(formData: FormData) {
       expectedPowerW: Math.max(50, Number(formData.get("expectedPowerW") ?? 1000)),
       toleranceW: Math.max(20, Number(formData.get("toleranceW") ?? 150)),
       minDurationMin: Math.max(5, Number(formData.get("minDurationMin") ?? 15)),
+      activeStartHour: parseHourField(formData.get("activeStartHour")),
+      activeEndHour: parseHourField(formData.get("activeEndHour")),
       notes: String(formData.get("notes") ?? "").trim() || null,
     },
   });
   revalidatePath("/loads");
+}
+
+function parseHourField(v: FormDataEntryValue | null): number | null {
+  if (v === null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(23, Math.round(n)));
 }
 
 async function toggleProfile(id: string) {
@@ -40,6 +49,7 @@ async function deleteProfile(id: string) {
 
 async function updateProfile(id: string, formData: FormData) {
   "use server";
+  const measuredDeviceId = String(formData.get("measuredDeviceId") ?? "").trim();
   await prisma.loadProfile.update({
     where: { id },
     data: {
@@ -47,6 +57,14 @@ async function updateProfile(id: string, formData: FormData) {
       expectedPowerW: Math.max(50, Number(formData.get("expectedPowerW") ?? 1000)),
       toleranceW: Math.max(20, Number(formData.get("toleranceW") ?? 150)),
       minDurationMin: Math.max(5, Number(formData.get("minDurationMin") ?? 15)),
+      activeStartHour: parseHourField(formData.get("activeStartHour")),
+      activeEndHour: parseHourField(formData.get("activeEndHour")),
+      measuredDeviceId: measuredDeviceId || null,
+      measuredOnThresholdW:
+        formData.get("measuredOnThresholdW") === null ||
+        formData.get("measuredOnThresholdW") === ""
+          ? null
+          : Math.max(0, Number(formData.get("measuredOnThresholdW") ?? 30)),
       notes: String(formData.get("notes") ?? "").trim() || null,
     },
   });
@@ -54,7 +72,7 @@ async function updateProfile(id: string, formData: FormData) {
 }
 
 export default async function LoadsPage() {
-  const [profiles, recentEvents] = await Promise.all([
+  const [profiles, recentEvents, plugDevices] = await Promise.all([
     prisma.loadProfile.findMany({
       orderBy: { createdAt: "asc" },
       include: { _count: { select: { events: true } } },
@@ -63,6 +81,15 @@ export default async function LoadsPage() {
       orderBy: { startTs: "desc" },
       take: 20,
       include: { profile: true },
+    }),
+    // Prises Tuya/Shelly disponibles pour lier à un LoadProfile.
+    prisma.device.findMany({
+      where: {
+        enabled: true,
+        type: { in: ["TUYA_SWITCH", "TUYA_METER", "SHELLY_METER"] as never },
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, type: true, role: true },
     }),
   ]);
 
@@ -229,6 +256,68 @@ export default async function LoadsPage() {
                       type="number"
                       min={5}
                       defaultValue={p.minDurationMin}
+                      className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] uppercase text-zinc-500 sm:col-span-2">
+                    Prise mesurée (optionnel)
+                    <select
+                      name="measuredDeviceId"
+                      defaultValue={
+                        (p as { measuredDeviceId?: string | null })
+                          .measuredDeviceId ?? ""
+                      }
+                      className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
+                    >
+                      <option value="">— Aucune (heuristique) —</option>
+                      {plugDevices.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.type})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] uppercase text-zinc-500">
+                    Seuil ON (W)
+                    <input
+                      name="measuredOnThresholdW"
+                      type="number"
+                      min={0}
+                      placeholder="30"
+                      defaultValue={
+                        (p as { measuredOnThresholdW?: number | null })
+                          .measuredOnThresholdW ?? ""
+                      }
+                      className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] uppercase text-zinc-500">
+                    Heure début
+                    <input
+                      name="activeStartHour"
+                      type="number"
+                      min={0}
+                      max={23}
+                      placeholder="—"
+                      defaultValue={
+                        (p as { activeStartHour?: number | null })
+                          .activeStartHour ?? ""
+                      }
+                      className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] uppercase text-zinc-500">
+                    Heure fin
+                    <input
+                      name="activeEndHour"
+                      type="number"
+                      min={0}
+                      max={23}
+                      placeholder="—"
+                      defaultValue={
+                        (p as { activeEndHour?: number | null })
+                          .activeEndHour ?? ""
+                      }
                       className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 normal-case"
                     />
                   </label>

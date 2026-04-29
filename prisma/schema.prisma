@@ -79,6 +79,7 @@ model Device {
   ruleExecutions  RuleExecution[]
   panelReadings   SolarPanelReading[]
   healthAlerts    HealthAlert[]
+  loadProfilesMeasured LoadProfile[] @relation("LoadProfileMeasuredDevice")
 }
 
 // Lecture instantanée par panneau solaire (par MPPT d'un micro-onduleur).
@@ -205,6 +206,16 @@ model LoadProfile {
   expectedPowerW  Int      // puissance moyenne typique configurée
   toleranceW      Int      @default(150)
   minDurationMin  Int      @default(15)
+  // Plage horaire d'éligibilité (heures locales 0-23). Si null/null,
+  // le profil est éligible 24/24. Si endHour <= startHour, la fenêtre
+  // traverse minuit (ex. 22h -> 6h).
+  activeStartHour Int?
+  activeEndHour   Int?
+  // Lien optionnel vers une prise mesurée (Tuya/Shelly). Si renseigné,
+  // currentlyOn = mesure directe (switchOn ou powerW > onThresholdW)
+  // au lieu de l'heuristique combinatoire sur le delta de conso.
+  measuredDeviceId String?
+  measuredOnThresholdW Int?
   enabled         Boolean  @default(true)
   detectedSchedule Json?   // {byDow: [...], confidence}
   notes           String?
@@ -212,6 +223,7 @@ model LoadProfile {
   updatedAt       DateTime @updatedAt
 
   events LoadEvent[]
+  measuredDevice Device? @relation("LoadProfileMeasuredDevice", fields: [measuredDeviceId], references: [id], onDelete: SetNull)
 }
 
 // Cycle d'activation détecté (ou consommation orpheline non matchée).

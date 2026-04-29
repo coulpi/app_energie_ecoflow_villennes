@@ -47,10 +47,79 @@ export async function GET() {
       where: { enabled: true, role: "GRID_METER" as never },
     }),
   ]);
-  const profiles = await prisma.loadProfile.findMany({
+  const allProfiles = await prisma.loadProfile.findMany({
     where: { enabled: true },
     orderBy: { createdAt: "asc" },
   });
+  // Filtre fenêtre horaire : un profil avec activeStartHour/activeEndHour
+  // n'est éligible à la détection live que dans sa plage. La voiture
+  // configurée 19h-7h n'est pas testée en journée → plus de faux positif
+  // quand jacuzzi (1900W) + pompe (500W) somment 2400W = puissance EV.
+  const hourNow = new Date().getHours();
+  const inActiveWindow = (sH: number | null, eH: number | null) => {
+    if (sH === null || eH === null) return true;
+    if (eH > sH) return hourNow >= sH && hourNow < eH;
+    return hourNow >= sH || hourNow < eH; // traverse minuit
+  };
+  // Mesure directe : pour chaque LoadProfile lié à une prise (Tuya/
+  // Shelly), on lit la dernière mesure de ce device et on en déduit
+  // currentlyOn sans heuristique. Plus fiable que la combinatoire
+  // sur le delta global.
+  const measuredIds = allProfiles
+    .map((p) => (p as { measuredDeviceId: string | null }).measuredDeviceId)
+    .filter((id): id is string => !!id);
+  const measuredReadings = measuredIds.length
+    ? await prisma.reading.findMany({
+        where: {
+          deviceId: { in: measuredIds },
+          ts: { gte: new Date(Date.now() - 5 * 60_000) },
+        },
+        orderBy: { ts: "desc" },
+        select: { deviceId: true, powerW: true, switchOn: true, ts: true },
+      })
+    : [];
+  // Premier reading par deviceId (déjà ordonnés desc → on prend le 1er
+  // rencontré).
+  const lastByDevice = new Map<
+    string,
+    { powerW: number | null; switchOn: boolean | null }
+  >();
+  for (const r of measuredReadings) {
+    if (!lastByDevice.has(r.deviceId)) {
+      lastByDevice.set(r.deviceId, { powerW: r.powerW, switchOn: r.switchOn });
+    }
+  }
+  // Profils mesurés : currentlyOn = switchOn=true OU powerW > seuil.
+  // On les met de côté pour ne pas les inclure dans la combinatoire.
+  // Leur puissance mesurée est aussi soustraite du delta avant la
+  // combinatoire pour ne laisser que les profils "à deviner".
+  const measuredOutputs: Array<{
+    profile: typeof allProfiles[number];
+    on: boolean;
+    measuredW: number;
+  }> = [];
+  let measuredSubtotalW = 0;
+  for (const p of allProfiles) {
+    const mid = (p as { measuredDeviceId: string | null }).measuredDeviceId;
+    if (!mid) continue;
+    const r = lastByDevice.get(mid);
+    if (!r) {
+      measuredOutputs.push({ profile: p, on: false, measuredW: 0 });
+      continue;
+    }
+    const onThr =
+      (p as { measuredOnThresholdW: number | null }).measuredOnThresholdW ?? 30;
+    const isOn =
+      r.switchOn === true || (r.powerW !== null && r.powerW >= onThr);
+    const w = r.powerW ?? 0;
+    measuredOutputs.push({ profile: p, on: isOn, measuredW: isOn ? w : 0 });
+    if (isOn) measuredSubtotalW += w;
+  }
+  const measuredProfileIds = new Set(measuredOutputs.map((m) => m.profile.id));
+  // Profils restants : combinatoire + filtre fenêtre horaire.
+  const profiles = allProfiles
+    .filter((p) => !measuredProfileIds.has(p.id))
+    .filter((p) => inActiveWindow(p.activeStartHour, p.activeEndHour));
 
   if (!prodDev || !gridDev) {
     return NextResponse.json({
@@ -203,6 +272,10 @@ export async function GET() {
   }
 
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;
+  // Delta restant à expliquer après avoir retiré ce qui est déjà
+  // attribué aux prises mesurées (jacuzzi, voiture, etc.).
+  const deltaResidualW =
+    deltaW !== null ? deltaW - measuredSubtotalW : null;
 
   // Détection combinatoire : on cherche le sous-ensemble de profils
   // dont la somme des expectedPowerW est la plus proche de deltaW.
@@ -212,17 +285,32 @@ export async function GET() {
   // pour 10 profils, négligeable).
   let bestMask = 0;
   let bestDistance = Infinity;
-  if (deltaW !== null && profiles.length > 0 && profiles.length <= 16) {
+  let bestPopcount = 0;
+  if (deltaResidualW !== null && profiles.length > 0 && profiles.length <= 16) {
     const total = 1 << profiles.length;
     for (let mask = 0; mask < total; mask++) {
       let sum = 0;
+      let popcount = 0;
       for (let i = 0; i < profiles.length; i++) {
-        if (mask & (1 << i)) sum += profiles[i]!.expectedPowerW;
+        if (mask & (1 << i)) {
+          sum += profiles[i]!.expectedPowerW;
+          popcount++;
+        }
       }
-      const dist = Math.abs(deltaW - sum);
-      if (dist < bestDistance) {
+      const dist = Math.abs(deltaResidualW - sum);
+      // Tiebreaker à distance égale : préfère le sous-ensemble avec
+      // PLUS d'appareils. Si {voiture 2400} et {jacuzzi+pompe 2400}
+      // matchent tous les deux à dist=0, on retient jacuzzi+pompe :
+      // une explication composée est plus probable qu'un appareil
+      // unique de même puissance qui ne tourne typiquement pas en
+      // même temps (cf. plages horaires différentes).
+      if (
+        dist < bestDistance ||
+        (dist === bestDistance && popcount > bestPopcount)
+      ) {
         bestDistance = dist;
         bestMask = mask;
+        bestPopcount = popcount;
       }
     }
   }
@@ -235,20 +323,19 @@ export async function GET() {
   }
   const subsetMatches = bestDistance <= bestSubsetTolerance;
 
-  const profilesOut = profiles.map((p, i) => {
-    if (deltaW === null) {
+  const heuristicOut = profiles.map((p, i) => {
+    if (deltaResidualW === null) {
       return {
         id: p.id,
         name: p.name,
         expectedW: p.expectedPowerW,
         currentlyOn: false,
         confidence: 0,
+        source: "heuristic" as const,
       };
     }
     const inSubset = (bestMask & (1 << i)) !== 0 && subsetMatches;
-    const distance = Math.abs(deltaW - p.expectedPowerW);
-    // Confiance affichée par profil : reflète la qualité du fit global
-    // pondérée par la part de ce profil dans le sous-ensemble.
+    const distance = Math.abs(deltaResidualW - p.expectedPowerW);
     const confidence = inSubset
       ? Math.max(0, 1 - bestDistance / Math.max(bestSubsetTolerance, 1))
       : Math.max(0, 1 - distance / Math.max(p.toleranceW, 1)) * 0.3;
@@ -258,8 +345,36 @@ export async function GET() {
       expectedW: p.expectedPowerW,
       currentlyOn: inSubset,
       confidence,
+      source: "heuristic" as const,
     };
   });
+  const measuredOut = measuredOutputs.map((m) => ({
+    id: m.profile.id,
+    name: m.profile.name,
+    expectedW: m.profile.expectedPowerW,
+    currentlyOn: m.on,
+    confidence: m.on ? 1 : 0,
+    source: "measured" as const,
+    measuredW: Math.round(m.measuredW),
+  }));
+  // Profils filtrés hors fenêtre horaire : on les expose en off mais
+  // visibles, pour cohérence d'affichage.
+  const outOfWindow = allProfiles
+    .filter((p) => !measuredProfileIds.has(p.id))
+    .filter((p) => !inActiveWindow(p.activeStartHour, p.activeEndHour))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      expectedW: p.expectedPowerW,
+      currentlyOn: false,
+      confidence: 0,
+      source: "out-of-window" as const,
+    }));
+  // Préserve l'ordre createdAt original.
+  const indexById = new Map(allProfiles.map((p, i) => [p.id, i]));
+  const profilesOut = [...measuredOut, ...heuristicOut, ...outOfWindow].sort(
+    (a, b) => (indexById.get(a.id)! - indexById.get(b.id)!),
+  );
 
   return NextResponse.json(
     {
