@@ -909,7 +909,7 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
   const offline = !reachable;
 
   return (
-    <div className="relative w-full min-h-screen flex items-center justify-center p-4 sm:p-6 lg:p-10 overflow-hidden text-white"
+    <div className="relative w-full -mx-4 sm:-mx-6 lg:-mx-8 -my-4 sm:-my-6 lg:-my-8 px-3 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8 overflow-hidden text-white rounded-none"
       style={{
         background:
           "radial-gradient(60% 80% at 70% 0%, oklch(0.22 0.08 280 / 0.6), transparent 60%)," +
@@ -980,7 +980,7 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
             <div className="aspect-[5/3.4] w-full">
               <JacuzziTub view={view} state={{ power, heaterOn, filterOn, jetsOn, bubblesOn, sanitizerOn, currentTempC, presetTempC }} />
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3 font-mono text-[10px] tracking-[0.14em]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mt-3 font-mono text-[10px] tracking-[0.14em]">
               {([
                 ["ALIM.", power, "oklch(0.78 0.18 145)"],
                 ["CHAUF.", heaterOn, "oklch(0.78 0.18 50)"],
@@ -1030,7 +1030,7 @@ export function JacuzziPanel(props: JacuzziPanelProps) {
               <div className="font-mono text-[11px] tracking-[0.22em] text-white/55">COMMANDES</div>
               <div className="font-mono text-[10px] tracking-[0.18em] text-white/35">cliquez pour activer</div>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3">
               <ActionButton name="power"     on={power}       busy={busy.power}     disabled={offline} onClick={(on) => handleToggle("power", on)} />
               <ActionButton name="heater"    on={heaterOn}    busy={busy.heater}    disabled={offline || !power} onClick={(on) => handleToggle("heater", on)} />
               <ActionButton name="filter"    on={filterOn}    busy={busy.filter}    disabled={offline || !power} onClick={(on) => handleToggle("filter", on)} />
