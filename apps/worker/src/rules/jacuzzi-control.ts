@@ -102,6 +102,10 @@ export async function setJacuzziPresetTemp(temp: number): Promise<intexSpa.Intex
 }
 
 let client: intexSpa.IntexSpaClient | null = null;
+// Override manuel applique au tick precedent. Permet de detecter la
+// transition manuel -> auto pour reinitialiser l'etat (sinon l'auto
+// herite d'un heaterOn=true et reste bloque a cause du cyclage Intex).
+let lastManualOverride: boolean | null = null;
 
 function getClient(): intexSpa.IntexSpaClient | null {
   if (!env.INTEX_SPA_HOST) return null;
@@ -219,6 +223,22 @@ export async function tickJacuzzi(): Promise<void> {
     await applyHeater(ctrl.jacuzziManualOverride);
     live.surplusHoldStartedAtMs = null;
     live.gridHoldStartedAtMs = null;
+    lastManualOverride = ctrl.jacuzziManualOverride;
+    return;
+  }
+
+  // Transition override -> auto : on reinitialise depuis une base propre.
+  // Sans ca, si l'auto herite d'un heaterOn=true sans surplus suffisant,
+  // le cyclage Intex (1900 W <-> 45 W) fait osciller l'import reseau et
+  // empeche le timer de coupure de jamais maturer.
+  if (lastManualOverride !== null) {
+    log.info("jacuzzi: sortie override manuel, reset chauffe avant auto", {
+      previous: lastManualOverride,
+    });
+    await applyHeater(false);
+    live.surplusHoldStartedAtMs = null;
+    live.gridHoldStartedAtMs = null;
+    lastManualOverride = null;
     return;
   }
 
