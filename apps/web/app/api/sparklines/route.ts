@@ -24,10 +24,17 @@ async function seriesFor(
   });
   if (!dev) return [];
   const since = new Date(sinceMs);
+  // Pour la batterie on veut le SoC (%), pas la puissance (W) qui n'a
+  // rien a voir avec le KPI "NIVEAU BATTERIE".
+  const useSoc = role === "BATTERY";
   const rows = await prisma.reading.findMany({
-    where: { deviceId: dev.id, ts: { gte: since } },
+    where: {
+      deviceId: dev.id,
+      ts: { gte: since },
+      ...(useSoc ? { soc: { not: null } } : {}),
+    },
     orderBy: { ts: "asc" },
-    select: { ts: true, powerW: true },
+    select: { ts: true, powerW: true, soc: true },
   });
   if (rows.length === 0) return [];
 
@@ -38,12 +45,13 @@ async function seriesFor(
   const sums = new Array<number>(buckets).fill(0);
   const counts = new Array<number>(buckets).fill(0);
   for (const r of rows) {
-    if (r.powerW === null || r.powerW === undefined) continue;
+    const v = useSoc ? r.soc : r.powerW;
+    if (v === null || v === undefined) continue;
     const idx = Math.min(
       buckets - 1,
       Math.max(0, Math.floor((r.ts.getTime() - sinceMs) / bucketMs)),
     );
-    sums[idx]! += r.powerW;
+    sums[idx]! += v;
     counts[idx]! += 1;
   }
   // Pour les buckets vides on reprend la dernière valeur connue (forward fill)
