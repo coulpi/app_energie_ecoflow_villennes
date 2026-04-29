@@ -92,7 +92,7 @@ const GEO = {
   // maison. Rayon 24 pour rester discrets.
   equipmentY: 580,
   equipmentR: 24,
-  equipmentXs: [240, 380, 520, 660] as readonly number[],
+  equipmentXs: [180, 320, 460, 600] as readonly number[],
 } as const;
 
 interface SeriesPayload {
