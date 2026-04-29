@@ -385,6 +385,23 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
 
 // ── Header ──────────────────────────────────────────────────────────
 function Header() {
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const time = now.toLocaleTimeString("fr-FR", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const date = now.toLocaleDateString("fr-FR", {
+    timeZone: "Europe/Paris",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
   return (
     <div
       style={{
@@ -449,6 +466,33 @@ function Header() {
           >
             <Pulse color={C.home} size={5} /> EN DIRECT
           </span>
+        </div>
+      </div>
+      <div
+        style={{
+          textAlign: "right",
+          font: "ui-sans-serif, system-ui",
+          color: C.text,
+        }}
+      >
+        <div
+          style={{
+            font: "600 26px ui-monospace, SFMono-Regular, Menlo, monospace",
+            letterSpacing: "0.04em",
+            color: C.home,
+          }}
+        >
+          {time}
+        </div>
+        <div
+          style={{
+            font: "500 11px ui-sans-serif, system-ui",
+            color: C.textDim,
+            textTransform: "capitalize",
+            marginTop: 2,
+          }}
+        >
+          {date}
         </div>
       </div>
     </div>
