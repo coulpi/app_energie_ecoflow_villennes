@@ -4,7 +4,7 @@
 // Pas d'auth : l'API n'est exposée que sur le réseau Docker interne.
 
 import http from "node:http";
-import { ollama as ollamaNs } from "@app/shared";
+import { ollama as ollamaNs, intexSpa } from "@app/shared";
 import { env } from "./env.js";
 import { log } from "./log.js";
 import { runAgent } from "./agent/optimizer.js";
@@ -254,6 +254,74 @@ export function startHttpServer(): http.Server {
         log.info("ecoflow cmd published", body);
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/jacuzzi/status") {
+        if (!env.INTEX_SPA_HOST) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: "INTEX_SPA_HOST non defini" }));
+          return;
+        }
+        const client = intexSpa.createIntexSpaClient({
+          host: env.INTEX_SPA_HOST,
+          port: env.INTEX_SPA_PORT,
+        });
+        try {
+          const status = await client.getStatus();
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              ok: true,
+              host: env.INTEX_SPA_HOST,
+              port: env.INTEX_SPA_PORT,
+              status: {
+                power: status.power,
+                filter: status.filter,
+                heater: status.heater,
+                jets: status.jets,
+                bubbles: status.bubbles,
+                sanitizer: status.sanitizer,
+                currentTemp: status.currentTemp,
+                errorCode: status.errorCode,
+                presetTemp: status.presetTemp,
+                unit: status.unit,
+              },
+            }),
+          );
+        } catch (e) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        } finally {
+          client.close();
+        }
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/jacuzzi/heater") {
+        if (!env.INTEX_SPA_HOST) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: "INTEX_SPA_HOST non defini" }));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { on: boolean };
+        const client = intexSpa.createIntexSpaClient({
+          host: env.INTEX_SPA_HOST,
+          port: env.INTEX_SPA_PORT,
+        });
+        try {
+          const status = await client.setHeater(!!body.on);
+          log.info("jacuzzi heater set", { on: body.on, heater: status.heater });
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: true, heater: status.heater }));
+        } catch (e) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        } finally {
+          client.close();
+        }
         return;
       }
 

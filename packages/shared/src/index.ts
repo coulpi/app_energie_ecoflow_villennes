@@ -8,5 +8,6 @@ export * as shelly from "./shelly";
 export * as ollama from "./ollama";
 export * as weather from "./weather";
 export * as apsystems from "./apsystems";
+export * as intexSpa from "./intex-spa";
 export * from "./rules-dsl";
 export * from "./time";

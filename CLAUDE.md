@@ -173,6 +173,69 @@ Récupéré 1×/h via `api-couleur-tempo.fr` (sans auth). Stocké dans
 `ControlState.tempoColor` / `tempoColorTomorrow`. Utilisé pour la
 décharge programmée (heures différentes selon couleur).
 
+## Jacuzzi Intex — pilotage chauffage par surplus
+
+Setup physique :
+
+- **Jacuzzi gonflable Intex PureSpa** (avec module Wi-Fi natif sur le
+  bloc de commande). Le module Wi-Fi est **toujours alimenté** : il
+  tient l'état chauffage / pompe / bulles, c'est lui qu'on commande.
+- **Prise Tuya en amont** : déjà configurée dans `Device` (rôle
+  `APPLIANCE`), mesure la conso totale du jacuzzi (chauffe ~1900 W +
+  pompe filtration ~50 W). **Ne JAMAIS la couper** : couper la prise
+  efface l'état du contrôleur Intex et casse le pilotage Wi-Fi.
+
+Stratégie de pilotage :
+
+- L'**actionneur** est le module Wi-Fi Intex (commande `heater on/off`),
+  pas la prise Tuya.
+- **Allumage chauffe** : surplus solaire (`-gridW`) ≥ ~1500 W pendant 2
+  min ET SoC batterie suffisant (sinon on pomperait sur la batterie),
+  hors heures Tempo rouge HP.
+- **Coupure chauffe** : `gridW > 300 W` pendant 5 min (= la maison
+  importe du réseau, le jacuzzi n'est plus "gratuit").
+- Hystérésis large pour éviter le cyclage du relais Intex (durée de vie
+  limitée vs un Shelly).
+
+Intégration Wi-Fi Intex :
+
+- Référence : `mathieu-mp/homeassistant-intex-spa` (HACS), basée sur la
+  lib Python `mathieu-mp/intex-spa`. Compatibilité = panneau de
+  commande dont le code gravé **NE contient PAS "TY"** (modèles
+  SB-HWF20, SB-HSWF20, SC-WF20, SC-WF20-1).
+- Client TS porté dans `packages/shared/src/intex-spa.ts` (export
+  namespace `intexSpa`). Connexion TCP sur **port 8990**, requête JSON
+  `{data: <hex+checksum>, sid: <timestamp>, type: 1|2|3}`, réponse JSON
+  avec status encodé en bigint (bits 104-109 = power/filter/heater/jets/
+  bubbles/sanitizer, octet 88-95 = temp courante, octet 24-31 = preset).
+- Commandes hex (toggle, le module inverse l'état → on lit `status`
+  d'abord et on n'envoie le toggle que si l'état courant ≠ consigne) :
+  | Action       | Request hex (avant checksum) |
+  |--------------|------------------------------|
+  | status       | `8888060FEE0F01`            |
+  | power        | `8888060F014000`            |
+  | filter       | `8888060F010004`            |
+  | heater       | `8888060F010010`            |
+  | jets         | `8888060F011000`            |
+  | bubbles      | `8888060F010400`            |
+  | sanitizer    | `8888060F010001`            |
+  | preset_temp  | `8888050F0C` + `<temp hex>` |
+- Checksum : 0xFF − Σ(bytes), modulo 0xFF, 0 → 0xFF, sortie hex maj.
+- Variables d'env worker à prévoir (dans `.env`) :
+  - `INTEX_SPA_HOST` : IP locale du module (DHCP fixé au routeur)
+  - `INTEX_SPA_PORT` : défaut 8990
+  - `INTEX_SPA_ENABLED` : 0/1
+- Boucle dédiée `apps/worker/src/rules/jacuzzi-control.ts` (à créer,
+  similaire à `follow-load.ts`), avec champs `ControlState` :
+  - `jacuzziEnabled`, `jacuzziStartSurplusW` (1500), `jacuzziStopGridW`
+    (300), `jacuzziStartHoldS` (120), `jacuzziStopHoldS` (300),
+    `jacuzziMinSocPct` (40), `jacuzziTempoBlockRedHp` (true).
+
+**Reste à faire** : (1) renseigner `INTEX_SPA_HOST` (IP locale du module
+Wi-Fi du jacuzzi, à figer en DHCP réservé sur le routeur), (2) écrire
+la boucle `jacuzzi-control.ts`, (3) ajouter les champs `ControlState`
+au schema Prisma, (4) UI minimale + endpoint `/api/jacuzzi/state`.
+
 ## Détection live d'appareils (`/api/loads/live`)
 
 Comparaison conso bilanée actuelle (`prod + grid`, **sans PS** car la

@@ -32,6 +32,12 @@ const Schema = z.object({
   APSYSTEMS_TOPIC_PREFIX: z.string().default("apsystems"),
   APSYSTEMS_MOCK: z.coerce.boolean().default(false),
   APSYSTEMS_MOCK_INTERVAL_S: z.coerce.number().int().positive().default(15),
+  // Jacuzzi Intex : module Wi-Fi local sur port TCP 8990. Si
+  // INTEX_SPA_HOST vide ou INTEX_SPA_ENABLED=false, le poller et la
+  // boucle de pilotage ne demarrent pas.
+  INTEX_SPA_HOST: z.string().optional(),
+  INTEX_SPA_PORT: z.coerce.number().int().positive().default(8990),
+  INTEX_SPA_ENABLED: z.coerce.boolean().default(false),
 });
 
 export const env = Schema.parse(process.env);
