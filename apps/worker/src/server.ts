@@ -301,6 +301,29 @@ export function startHttpServer(): http.Server {
         const ctrl = (await prisma.controlState.findUnique({
           where: { key: "default" },
         })) as Record<string, unknown> | null;
+        // Cherche la prise Tuya APPLIANCE dont le nom contient "jacuzzi"
+        // (case-insensitive) et remonte sa derniere mesure de puissance.
+        const plug = await prisma.device.findFirst({
+          where: {
+            enabled: true,
+            role: "APPLIANCE" as never,
+            type: "TUYA_SWITCH" as never,
+            name: { contains: "jacuzzi", mode: "insensitive" },
+          },
+        });
+        let plugPowerW: number | null = null;
+        let plugSwitchOn: boolean | null = null;
+        let plugTs: string | null = null;
+        if (plug) {
+          const r = await prisma.reading.findFirst({
+            where: { deviceId: plug.id },
+            orderBy: { ts: "desc" },
+            select: { powerW: true, switchOn: true, ts: true },
+          });
+          plugPowerW = r?.powerW ?? null;
+          plugSwitchOn = r?.switchOn ?? null;
+          plugTs = r?.ts ? r.ts.toISOString() : null;
+        }
         const startHoldS = (ctrl?.jacuzziStartHoldS as number | undefined) ?? 120;
         const stopHoldS = (ctrl?.jacuzziStopHoldS as number | undefined) ?? 300;
         const now = Date.now();
@@ -343,6 +366,13 @@ export function startHttpServer(): http.Server {
                 gridElapsed !== null
                   ? Math.max(0, stopHoldS * 1000 - gridElapsed)
                   : null,
+            },
+            plug: {
+              deviceId: plug?.id ?? null,
+              name: plug?.name ?? null,
+              powerW: plugPowerW,
+              switchOn: plugSwitchOn,
+              ts: plugTs,
             },
             ctrl: {
               jacuzziEnabled: ctrl?.jacuzziEnabled ?? false,

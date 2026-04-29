@@ -20,6 +20,13 @@ interface JacuzziState {
   lastTickAtMs: number | null;
   surplusHold: { active: boolean; elapsedMs: number | null; targetMs: number; remainingMs: number | null };
   gridHold: { active: boolean; elapsedMs: number | null; targetMs: number; remainingMs: number | null };
+  plug: {
+    deviceId: string | null;
+    name: string | null;
+    powerW: number | null;
+    switchOn: boolean | null;
+    ts: string | null;
+  };
   ctrl: {
     jacuzziEnabled: boolean;
     jacuzziStartSurplusW: number;
@@ -115,7 +122,7 @@ export default function JacuzziPage() {
 
   return (
     <div className="space-y-5 max-w-4xl mx-auto">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
           <h1 className="page-h1">Jacuzzi</h1>
           <p className="page-sub mt-1">
@@ -127,11 +134,21 @@ export default function JacuzziPage() {
             )}
           </p>
         </div>
-        {s.errorCode && (
-          <span className="text-rose-400 text-sm">
-            Erreur module <code>{s.errorCode}</code>
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {s.plug.deviceId && (
+            <div className="text-right">
+              <div className="text-xs text-zinc-500">{s.plug.name ?? "Prise jacuzzi"}</div>
+              <div className="text-2xl font-bold tabular-nums text-amber-300">
+                {s.plug.powerW !== null ? `${Math.round(s.plug.powerW)} W` : "— W"}
+              </div>
+            </div>
+          )}
+          {s.errorCode && (
+            <span className="text-rose-400 text-sm">
+              Erreur module <code>{s.errorCode}</code>
+            </span>
+          )}
+        </div>
       </div>
 
       <SpaSchema s={s} busy={busy} onToggle={toggle} onSetTemp={setTemp} />
@@ -333,14 +350,17 @@ function SpaSchema({
               {sanitizer && <text x="7" y="22" textAnchor="middle" fontSize="9" fill="#fff">+</text>}
             </g>
 
-            {/* Affichage température au centre */}
+            {/* Affichage température + puissance au centre */}
             <g>
-              <rect x="115" y="105" width="90" height="50" rx="6" fill="#000" opacity="0.55" />
-              <text x="160" y="128" textAnchor="middle" fontSize="22" fontWeight="700" fill="#fff">
+              <rect x="110" y="100" width="100" height="62" rx="6" fill="#000" opacity="0.6" />
+              <text x="160" y="123" textAnchor="middle" fontSize="22" fontWeight="700" fill="#fff">
                 {tempC}°C
               </text>
-              <text x="160" y="146" textAnchor="middle" fontSize="11" fill="#a1a1aa">
+              <text x="160" y="139" textAnchor="middle" fontSize="10" fill="#a1a1aa">
                 cible {presetC}°
+              </text>
+              <text x="160" y="155" textAnchor="middle" fontSize="11" fontWeight="600" fill="#fcd34d">
+                {s.plug.powerW !== null ? `${Math.round(s.plug.powerW)} W` : "— W"}
               </text>
             </g>
 
