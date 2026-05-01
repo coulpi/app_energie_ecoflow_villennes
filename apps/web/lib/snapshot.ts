@@ -168,24 +168,30 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   let consumptionW: number | null = null; // sera calculé par bilan
   let batteryPowerW: number | null = bat?.powerW ?? null;
 
-  // (0) Priorité absolue : si la prise AC est ON et rapporte une conso
-  // significative, c'est la mesure la plus fiable de la charge en cours.
-  // Le BMS Delta Max envoie parfois des pics transitoires sur amp×vol DC
-  // (vu jusqu'à 2.1 kW alors que la prise AC en passe 500). On préfère
-  // la mesure AC réelle en entrée de batterie.
-  if (sw?.switchOn === true && sw.powerW !== null && sw.powerW > 30) {
-    batteryPowerW = -sw.powerW;
-  } else if (
-    // Prise ON mais ne tire quasi rien : la batterie ne charge plus
-    // (typiquement SoC=100% atteint). Le BMS peut continuer à pousser
-    // une ancienne valeur de charge (-2200 W stale) tant qu'il ne
-    // refresh pas. La mesure prise AC est plus fiable : on force 0.
-    sw?.switchOn === true &&
+  // (0) Priorité absolue : la prise AC qui alimente la batterie est la
+  // mesure la plus fiable de la charge en cours. Le BMS Delta Max
+  // envoie parfois des pics transitoires (vu -2200 W alors que la
+  // prise AC en passe 500), ou continue à pousser une ancienne valeur
+  // stale après que le SoC=100% soit atteint. On préfère la mesure AC
+  // réelle en entrée de batterie dès qu'elle est disponible.
+  // NB : on n'exige PAS `switchOn === true` car le poller Tuya ne
+  // remplit ce champ que pour les devices type TUYA_SWITCH ; si la
+  // prise est un TUYA_METER (rôle BATTERY_AC_SWITCH sur un meter), on
+  // doit quand même se fier à `powerW`.
+  // `plugSaysNotCharging` : la prise existe et indique zéro tirage AC.
+  // Source de vérité absolue pour exclure une charge — le BMS peut
+  // pousser une valeur stale ET le bilan énergétique peut conclure à
+  // tort à une charge si production/grid/conso sont déphasés.
+  const plugSaysNotCharging =
+    sw !== null &&
     sw.powerW !== null &&
-    sw.powerW < 30 &&
-    batteryPowerW !== null &&
-    batteryPowerW < -30
-  ) {
+    (sw.switchOn === false || sw.powerW <= 30);
+
+  if (sw && sw.powerW !== null && sw.switchOn !== false && sw.powerW > 30) {
+    // Prise active et tire de la puissance → c'est la charge réelle.
+    batteryPowerW = -sw.powerW;
+  } else if (plugSaysNotCharging && batteryPowerW !== null && batteryPowerW < 0) {
+    // Prise ON@0 ou OFF mais BMS prétend charger → force 0.
     batteryPowerW = 0;
   }
 
@@ -203,6 +209,9 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   // rien à transmettre, donc afficher 400 W serait mensonger.
 
   // 1) Si l'API privée (BMS) ne donne rien, on tente le bilan énergétique.
+  // Si la prise dit "pas de charge" (powerW≈0 ou OFF), on n'autorise pas
+  // un résultat négatif (= charge) du bilan : un déphasage entre pollers
+  // peut faire conclure à tort à une charge fantôme de 2200 W.
   if (
     batteryPowerW === null &&
     measuredConsumptionW !== null &&
@@ -211,7 +220,9 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   ) {
     const balanceBat = measuredConsumptionW - productionW - gridW;
     if (Math.abs(balanceBat) > 30) {
-      batteryPowerW = Math.max(-2200, Math.min(2200, balanceBat));
+      let v = Math.max(-2200, Math.min(2200, balanceBat));
+      if (plugSaysNotCharging && v < 0) v = 0;
+      batteryPowerW = v;
     } else {
       batteryPowerW = 0;
     }
