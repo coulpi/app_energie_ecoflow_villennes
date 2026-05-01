@@ -288,7 +288,13 @@ export async function GET() {
   let bestPopcount = 0;
   if (deltaResidualW !== null && profiles.length > 0 && profiles.length <= 16) {
     const total = 1 << profiles.length;
-    for (let mask = 0; mask < total; mask++) {
+    // Si le résiduel est clairement non négligeable (>100 W), le subset
+    // vide ne doit PAS gagner par défaut : un appareil non mesuré est
+    // probablement actif. On commence donc l'énumération à mask=1
+    // (sauf si résiduel proche de 0 où le vide est la bonne réponse).
+    const skipEmpty = deltaResidualW > 100;
+    const startMask = skipEmpty ? 1 : 0;
+    for (let mask = startMask; mask < total; mask++) {
       let sum = 0;
       let popcount = 0;
       for (let i = 0; i < profiles.length; i++) {
