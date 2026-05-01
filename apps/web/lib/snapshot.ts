@@ -33,6 +33,15 @@ const CONSUMPTION_CACHE_TTL_MS = 120_000;
  * 6h en arrière pour trouver la dernière valeur connue. Évite que
  * l'affichage tombe à 0 % entre 2 broadcasts BMS.
  */
+// Fenêtre de fraicheur du SoC sticky. Le BMS Delta Max ne diffuse qu'en
+// bursts (typiquement toutes les 30-70 min, pendant les transitions de
+// charge/décharge), et nous n'avons pas de poll actif fiable (REST 1006
+// pour Delta Max gen 1, MQTT privé en lecture seule). Au-delà de cette
+// fenêtre, plutôt que d'afficher une valeur potentiellement très
+// périmée (ex. 74% quand la batterie est en réalité à 100%), on
+// retourne null → l'UI affiche "—".
+const SOC_STICKY_TTL_MS = 15 * 60_000;
+
 async function stickyBatterySoc(current: number | null): Promise<number | null> {
   if (current !== null) return current;
   const battery = await prisma.device.findFirst({
@@ -43,7 +52,7 @@ async function stickyBatterySoc(current: number | null): Promise<number | null> 
     where: {
       deviceId: battery.id,
       soc: { not: null },
-      ts: { gte: new Date(Date.now() - 6 * 3_600_000) },
+      ts: { gte: new Date(Date.now() - SOC_STICKY_TTL_MS) },
     },
     orderBy: { ts: "desc" },
     select: { soc: true },
