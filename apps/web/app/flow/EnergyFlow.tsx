@@ -86,13 +86,13 @@ const GEO = {
   H: 660,
   solar: { x: 500, y: 110, r: 58 },
   home: { x: 500, y: 410, r: 64 },
-  battery: { x: 180, y: 360, r: 54 },
-  grid: { x: 820, y: 360, r: 54 },
+  battery: { x: 90, y: 360, r: 54 },
+  grid: { x: 910, y: 360, r: 54 },
   // Équipements : 4 mini-nœuds en ligne sous home, dans le périmètre
   // maison. Rayon 24 pour rester discrets.
   equipmentY: 580,
   equipmentR: 24,
-  equipmentXs: [180, 320, 460, 600] as readonly number[],
+  equipmentXs: [220, 380, 540, 700] as readonly number[],
 } as const;
 
 interface SeriesPayload {
@@ -309,7 +309,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
               background: `linear-gradient(180deg, ${C.panelHi}, ${C.panel})`,
               border: `1px solid ${C.border}`,
               borderRadius: 18,
-              padding: 18,
+              padding: "14px 8px 16px",
               minHeight: 540,
               overflow: "hidden",
             }}
@@ -2105,9 +2105,9 @@ function FlowDiagram({
           réseau exclu). */}
       <g style={{ pointerEvents: "none" }}>
         <rect
-          x={80}
+          x={20}
           y={10}
-          width={600}
+          width={800}
           height={640}
           rx={22}
           ry={22}
@@ -2117,7 +2117,7 @@ function FlowDiagram({
           strokeDasharray="6 6"
         />
         <text
-          x={104}
+          x={44}
           y={32}
           style={{
             font: "600 10px ui-sans-serif, system-ui",
