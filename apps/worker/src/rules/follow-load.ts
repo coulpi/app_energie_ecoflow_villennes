@@ -22,8 +22,16 @@ const SURPLUS_HYST_W = 50;
 // Rampe : variation max de la puissance de charge entre 2 ticks. À 30 s
 // de polling, 100 W/tick ≈ +200 W/min, monte de 0 à 800 W en ~4 min.
 const CHARGE_RAMP_W_PER_TICK = 100;
+// Détection "batterie pleine" : si la prise est ON depuis plus de
+// FULL_BATTERY_GRACE_MS et que le tirage AC reste sous FULL_BATTERY_PLUG_THRESHOLD_W,
+// on conclut que le BMS refuse la charge (batterie pleine en réalité,
+// même si le SoC affiché est obsolète) et on bascule en mode décharge
+// via PowerStream pour valoriser le surplus au lieu de l'exporter.
+const FULL_BATTERY_GRACE_MS = 2 * 60_000;
+const FULL_BATTERY_PLUG_THRESHOLD_W = 30;
 let deficitStartedAtMs: number | null = null;
 let lastOffAtMs: number | null = null;
+let switchOnAtMs: number | null = null;
 // Suit l'état précédent de la fenêtre tempo : on n'intervient sur la
 // priorité PowerStream que sur transition (in→out ou out→in).
 let lastInTempoWindow: boolean | null = null;
@@ -94,7 +102,11 @@ async function setSwitch(on: boolean): Promise<void> {
     { action: on ? "tuya.switch.on" : "tuya.switch.off", params: {} },
     { snapshot: await buildSnapshot() },
   );
-  if (!on) lastOffAtMs = Date.now();
+  if (on) switchOnAtMs = Date.now();
+  else {
+    lastOffAtMs = Date.now();
+    switchOnAtMs = null;
+  }
   last.switchOn = on;
   log.info("follow-load: prise AC", { switchOn: on });
 }
@@ -312,6 +324,58 @@ export async function tickFollowLoad(): Promise<void> {
     (soc === null || soc > ctrl.minDischargeSoc);
 
   if (canStartCharge || canKeepCharge) {
+    // Détection batterie pleine : si la prise est ON depuis >2 min et tire
+    // <30 W alors qu'on commande une charge non nulle, le BMS refuse — la
+    // batterie est en réalité pleine (le SoC affiché peut être obsolète,
+    // cf. broadcasts BMS sporadiques). On coupe la prise, on verrouille
+    // un offLock pour ne pas réessayer immédiatement, et on bascule le
+    // PowerStream en alimentation pour valoriser le surplus.
+    if (
+      alreadyCharging &&
+      switchOnAtMs !== null &&
+      now - switchOnAtMs > FULL_BATTERY_GRACE_MS &&
+      last.chargeW !== null &&
+      last.chargeW > 0
+    ) {
+      const battery = await prisma.device.findFirst({
+        where: { enabled: true, role: "BATTERY_AC_SWITCH" as never },
+      });
+      if (battery) {
+        const plug = await prisma.reading.findFirst({
+          where: {
+            deviceId: battery.id,
+            ts: { gte: new Date(now - 90_000) },
+          },
+          orderBy: { ts: "desc" },
+          select: { powerW: true },
+        });
+        if (
+          plug &&
+          plug.powerW !== null &&
+          plug.powerW < FULL_BATTERY_PLUG_THRESHOLD_W
+        ) {
+          log.info(
+            "follow-load: batterie pleine detectee (prise ON >2min, tirage <30W)",
+            { plugW: plug.powerW, soc, switchOnSinceMs: now - switchOnAtMs },
+          );
+          await setCharge(0);
+          await setSwitch(false);
+          await setDischarge(0);
+          if (ctrl.powerstreamSn) {
+            try {
+              await setPowerstreamPriority(ctrl.powerstreamSn, 0);
+              log.info("follow-load: PS bascule en alimentation pour valoriser surplus");
+            } catch (e) {
+              log.warn("follow-load: PS priority alimentation failed", {
+                error: (e as Error).message,
+              });
+            }
+          }
+          return;
+        }
+      }
+    }
+
     // Suivi du déficit : tant que surplus < chargeMinW pendant la charge,
     // la batterie consomme du réseau. On laisse 10 min, puis on coupe.
     if (surplus < chargeMinW) {

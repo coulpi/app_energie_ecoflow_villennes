@@ -17,7 +17,11 @@ setGlobalDispatcher(
 import { startTuyaPoller } from "./pollers/tuya.js";
 import { startTempoPoller } from "./pollers/tempo.js";
 import { startShellyPoller } from "./pollers/shelly.js";
-import { startEcoFlowMqtt, startEcoFlowPoller } from "./pollers/ecoflow.js";
+import {
+  startEcoFlowMqtt,
+  startEcoFlowPoller,
+  startEcoFlowQuotaPing,
+} from "./pollers/ecoflow.js";
 import {
   startApsystemsMqtt,
   startApsystemsMock,
@@ -50,6 +54,11 @@ async function main() {
   // EcoFlow REST poll : l'API gratuite refuse souvent getQuotaAll sur
   // Delta Max (code 1006). On garde le tick mais sans bloquer si refusé.
   startEcoFlowPoller(env.POLL_INTERVAL_SECONDS);
+
+  // Ping MQTT periodique pour coaxer un broadcast d'etat — le BMS Delta
+  // Max ne diffuse spontanement qu'en bursts et reste muet 30-70 min en
+  // idle. Inoffensif si le BMS ignore.
+  startEcoFlowQuotaPing(60);
 
   startRulesEngine(env.POLL_INTERVAL_SECONDS);
   startFollowLoadLoop(env.POLL_INTERVAL_SECONDS);

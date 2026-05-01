@@ -9,6 +9,7 @@ const {
   connectEcoFlowPrivateMqtt,
   publishEcoFlowPrivateCommand,
   publishEcoFlowRaw,
+  requestEcoFlowPrivateQuota,
 } = ecoflowPrivateNs;
 
 import { ecoflowPowerstream as psNs } from "@app/shared";
@@ -399,6 +400,33 @@ export function startEcoFlowPoller(intervalSeconds: number) {
       await pollEcoFlowOnce();
     } catch (e) {
       log.error("ecoflow poll tick error", { error: (e as Error).message });
+    }
+  };
+  void tick();
+  return setInterval(tick, intervalSeconds * 1000);
+}
+
+/**
+ * Force le BMS à diffuser son état courant via MQTT. Le Delta Max gen 1
+ * ne broadcaste qu'en bursts (transitions de charge/décharge) et reste
+ * silencieux 30-70 min entre. Ce ping périodique tente de coaxer un
+ * push d'état pour que SoC / inputW / outputW restent à jour. Si le BMS
+ * ignore, no-op silencieux.
+ */
+export function startEcoFlowQuotaPing(intervalSeconds = 60): NodeJS.Timeout {
+  log.info("starting ecoflow quota ping", { intervalSeconds });
+  const tick = async () => {
+    const ctx = getEcoFlowPrivateMqtt();
+    if (!ctx) return;
+    try {
+      const batteries = await prisma.device.findMany({
+        where: { enabled: true, type: "ECOFLOW_BATTERY" },
+      });
+      for (const b of batteries) {
+        await requestEcoFlowPrivateQuota(ctx.client, ctx.userId, b.externalId);
+      }
+    } catch (e) {
+      log.warn("ecoflow quota ping failed", { error: (e as Error).message });
     }
   };
   void tick();

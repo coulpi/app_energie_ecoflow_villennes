@@ -260,6 +260,36 @@ export function publishEcoFlowPrivateCommand(
 }
 
 /**
+ * Demande au BMS un broadcast d'état complet ("get quota"). Utile pour
+ * Delta Max gen 1 qui ne diffuse spontanément qu'en bursts pendant les
+ * transitions de charge/décharge — entre les bursts, le SoC reste
+ * inconnu pendant 30-70 min.
+ *
+ * Le format n'est pas officiellement documenté pour Delta Max ; on
+ * tente le pattern utilisé par l'app mobile / hassio-ecoflow-cloud.
+ * Si le BMS ignore, no-op silencieux.
+ */
+export function requestEcoFlowPrivateQuota(
+  client: MqttClient,
+  userId: string,
+  sn: string,
+): Promise<void> {
+  const topic = `/app/${userId}/${sn}/thing/property/get`;
+  const seq = 999_900_000 + Math.floor(Math.random() * 90_000) + 10_000;
+  const payload = JSON.stringify({
+    from: "HomeAssistant",
+    id: String(seq),
+    version: "1.0",
+  });
+  return new Promise<void>((resolve, reject) => {
+    client.publish(topic, payload, { qos: 1 }, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+/**
  * Variante "raw" : topic et payload arbitraires. Pratique pour tester
  * différents formats de commande pendant le reverse engineering.
  */
