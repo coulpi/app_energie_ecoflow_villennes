@@ -61,10 +61,10 @@ ok ".env présent"
 
 # 4. Build + up
 info "Build des images Docker (peut prendre 3-5 min la 1re fois)"
-docker compose build
+docker compose --profile apsystems build
 
 info "Démarrage des services"
-docker compose up -d
+docker compose --profile apsystems up -d
 
 # 5. Migration Prisma — la 1re fois ou si le schéma a changé
 info "Application du schéma Prisma sur la base"
