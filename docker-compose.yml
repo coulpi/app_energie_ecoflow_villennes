@@ -71,10 +71,35 @@ services:
       INTEX_SPA_HOST: ${INTEX_SPA_HOST:-}
       INTEX_SPA_PORT: ${INTEX_SPA_PORT:-8990}
       INTEX_SPA_ENABLED: ${INTEX_SPA_ENABLED:-false}
+      APSYSTEMS_MQTT_URL: ${APSYSTEMS_MQTT_URL:-}
+      APSYSTEMS_MQTT_USER: ${APSYSTEMS_MQTT_USER:-}
+      APSYSTEMS_MQTT_PASSWORD: ${APSYSTEMS_MQTT_PASSWORD:-}
+      APSYSTEMS_TOPIC_PREFIX: ${APSYSTEMS_TOPIC_PREFIX:-apsystems}
+      APSYSTEMS_MOCK: ${APSYSTEMS_MOCK:-0}
+      APSYSTEMS_MOCK_INTERVAL_S: ${APSYSTEMS_MOCK_INTERVAL_S:-15}
       TZ: Europe/Paris
     depends_on:
       postgres:
         condition: service_healthy
 
+  # Broker MQTT pour ingerer les trames de la passerelle ESP+CC2530
+  # APSystems (2e maison). Activation via profile docker compose :
+  #   docker compose --profile apsystems up -d
+  # Necessite mosquitto.conf + (optionnel) passwd dans ./mosquitto/config/
+  mosquitto:
+    image: eclipse-mosquitto:2
+    profiles: ["apsystems"]
+    restart: unless-stopped
+    ports:
+      - "${MOSQUITTO_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    environment:
+      TZ: Europe/Paris
+
 volumes:
   postgres_data:
+  mosquitto_data:
+  mosquitto_log:
