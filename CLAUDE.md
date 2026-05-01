@@ -61,6 +61,33 @@ Mapping Delta Max (`apps/worker/src/rules/ecoflow-cmds.ts`) :
 `setDischargeWatts` retourne `null` sur Delta Max : ce modèle ne sait pas
 moduler sa décharge AC (juste ON/OFF).
 
+### Delta Max — broadcasts BMS sporadiques + ping `/get`
+
+**Le BMS Delta Max gen 1 ne diffuse qu'en bursts** (pendant les transitions
+de charge/décharge) puis reste muet 30-70 min en idle. Conséquence : le
+SoC affiché peut rester périmé pendant des heures (ex. 74% sticky alors
+que la batterie est en réalité à 100%). Et REST `/iot-open/sign/device/quota/all`
+renvoie aussi 1006 → pas de poll actif possible par cette voie.
+
+**Solution validée en live** : le BMS répond à un ping MQTT sur le topic
+`/app/{userId}/{sn}/thing/property/get` (payload minimal `{from, id, version}`).
+Implémenté via `requestEcoFlowPrivateQuota` dans `packages/shared/src/ecoflow-private.ts`,
+appelé toutes les 60 s par `startEcoFlowQuotaPing` (`apps/worker/src/pollers/ecoflow.ts`).
+Quelques secondes après chaque ping, le BMS pousse un broadcast complet
+(SoC, inputW, outputW). Sticky SoC réduit à **15 min** dans `snapshot.ts`
+(au-delà → null/`—` plutôt qu'une valeur fausse).
+
+### Détection "batterie pleine" dans follow-load
+
+Si la **prise AC est ON depuis >2 min** et tire **<30 W** alors qu'on
+commande `slowChgPower > 0`, c'est que le BMS refuse — la batterie est
+pleine en réalité (le SoC affiché peut être obsolète si le ping n'a pas
+encore tourné). On coupe la prise, on verrouille `offToOnLockMin`, et on
+bascule le **PowerStream en `alimentation`** (priority=0) pour valoriser
+le surplus au lieu de l'exporter au réseau. Implémenté dans
+`apps/worker/src/rules/follow-load.ts` (constantes `FULL_BATTERY_GRACE_MS`
+et `FULL_BATTERY_PLUG_THRESHOLD_W`).
+
 ### PowerStream — Protocol Buffers
 
 Le PowerStream EcoFlow (HW51… SN différent de la batterie) utilise
@@ -102,21 +129,30 @@ Logique critique, plusieurs fix successifs. Lire avant de toucher :
 
 Cherché dans cet ordre :
 
-1. **Prise AC Tuya** : si `switchOn === true && powerW > 30`, on prend
-   `-acSwitchPowerW` directement (la mesure AC réelle d'entrée batterie,
-   plus fiable que le BMS qui peut envoyer des pics transitoires).
-2. **PowerStream stable** : si `priority === 0` (alimentation) et
-   `permanentWatts > 30`, on plancher `batteryPowerW` à cette consigne.
-   Évite l'oscillation 0 W ↔ valeur BMS quand le BMS ne pousse pas régulièrement.
-3. **BMS direct** depuis le reading.
-4. **Bilan énergétique** : `conso − prod − grid` avec seuil 30 W.
-5. **Prise AC charging** ON + powerW > 5 → `-acSwitchPowerW`.
-6. **Dérive du SoC sur 60 min**.
+1. **Prise AC Tuya — autoritaire pour exclure une charge** :
+   - Si `sw.powerW > 30` (peu importe `switchOn` qui n'est rempli que
+     pour `TUYA_SWITCH`, pas `TUYA_METER`) → `-sw.powerW` (mesure AC
+     réelle, plus fiable que les pics transitoires du BMS).
+   - Sinon, on calcule `plugSaysNotCharging = sw.switchOn === false || sw.powerW <= 30`.
+     Cette condition est utilisée plus bas pour **plafonner à 0** toute
+     charge fantôme (BMS stale, bilan désynchronisé, etc.).
+2. **BMS direct** depuis le reading.
+3. **Bilan énergétique** : `conso − prod − grid` avec seuil 30 W,
+   clampé `[-2200, +2200]`. Si `plugSaysNotCharging`, on plafonne le
+   résultat à 0 (pas de charge) — évite la fausse "Charge 2200 W"
+   quand le BMS est stale et que prod/grid/conso sont déphasés.
+4. **Dérive du SoC sur 60 min**.
 
 Guards finaux (avant retour) :
 - Seuil 30 W absolus → batterie idle.
 - Cohérence prise AC : si `switchOn === false`, toute valeur `< 0`
   (charging) est rejetée → 0.
+
+**Important** : `switchOn` n'est rempli que par le poller Tuya pour les
+devices `TUYA_SWITCH`, pas `TUYA_METER` (cf. `apps/worker/src/pollers/tuya.ts`).
+Donc une garde du type `sw?.switchOn === true && sw.powerW > 30` saute
+silencieusement pour les meters → utiliser `sw.powerW > 30` seul comme
+preuve de charge.
 
 ### `consumptionW`
 
@@ -253,6 +289,20 @@ sur `/loads`).
 
 Pour chaque `LoadProfile`, `currentlyOn = |delta - expectedW| <= toleranceW`,
 avec `confidence ∈ [0, 1]`.
+
+**Recherche combinatoire** : pour les profils sans `measuredDeviceId`,
+on énumère tous les sous-ensembles (2^N, N ≤ 16) et on garde celui dont
+la somme `expectedPowerW` est la plus proche du `deltaResidualW` (delta
+restant après soustraction des prises mesurées). À distance égale, on
+préfère le sous-ensemble avec le plus d'appareils (jacuzzi+pompe = 2400 W
+plutôt que voiture seule = 2400 W).
+
+**Important** : si `deltaResidualW > 100 W`, on **exclut le sous-ensemble
+vide** de l'énumération. Sans ça, un résiduel de ~250 W (pompe piscine
+500 W ±300 attendue) faisait gagner `{}` (dist=250) face à `{pool}`
+(dist=253), et la pompe n'était jamais détectée. La règle : un résiduel
+clairement non négligeable est une preuve qu'un appareil est actif → le
+set vide ne peut pas être la bonne réponse.
 
 ## Agent LLM (`apps/worker/src/agent`)
 
