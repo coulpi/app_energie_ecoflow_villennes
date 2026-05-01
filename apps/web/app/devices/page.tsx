@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import TestDeviceButton from "./TestDeviceButton";
+import ApsystemsConfigCard from "./ApsystemsConfigCard";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,8 @@ export default async function DevicesPage() {
           Compteurs, prises et batteries reliés au système de pilotage.
         </p>
       </div>
+
+      <ApsystemsConfigCard />
 
       <form action={createDevice} className="card">
         <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 mb-3">

@@ -17,6 +17,10 @@ import {
   publishPowerStreamCommand,
 } from "./pollers/ecoflow.js";
 import { getFollowLoadState } from "./rules/follow-load.js";
+import {
+  resolveApsystemsConfig,
+  restartApsystemsMqtt,
+} from "./pollers/apsystems.js";
 import { getJacuzziState, setJacuzziFunction, setJacuzziPresetTemp, type IntexFunction } from "./rules/jacuzzi-control.js";
 import { prisma } from "./db.js";
 
@@ -490,6 +494,78 @@ export function startHttpServer(): http.Server {
         } finally {
           client.close();
         }
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/apsystems/config") {
+        const cfg = await resolveApsystemsConfig();
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            url: cfg.url,
+            username: cfg.username ?? null,
+            hasPassword: !!cfg.password,
+            topicPrefix: cfg.topicPrefix,
+            espIp: cfg.espIp,
+            source: cfg.source,
+          }),
+        );
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/apsystems/config") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Partial<{
+          mqttUrl: string | null;
+          mqttUser: string | null;
+          mqttPassword: string | null;
+          topicPrefix: string | null;
+          espIp: string | null;
+        }>;
+        const data: Record<string, unknown> = {};
+        const norm = (v: string | null | undefined): string | null => {
+          if (v === undefined) return undefined as never;
+          if (v === null) return null;
+          const t = String(v).trim();
+          return t === "" ? null : t;
+        };
+        if ("mqttUrl" in body) data.apsystemsMqttUrl = norm(body.mqttUrl);
+        if ("mqttUser" in body) data.apsystemsMqttUser = norm(body.mqttUser);
+        if ("mqttPassword" in body) {
+          // Mot de passe : "" => null (effacement explicite). Si la cle
+          // est absente du body, on ne touche pas (preserve l'existant).
+          data.apsystemsMqttPassword = norm(body.mqttPassword);
+        }
+        if ("topicPrefix" in body) data.apsystemsTopicPrefix = norm(body.topicPrefix);
+        if ("espIp" in body) data.apsystemsEspIp = norm(body.espIp);
+        await prisma.controlState.update({
+          where: { key: "default" },
+          data: data as never,
+        });
+        const cfg = await restartApsystemsMqtt();
+        log.info("apsystems config updated", {
+          fields: Object.keys(data),
+          source: cfg.source,
+          url: cfg.url,
+        });
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            ok: true,
+            url: cfg.url,
+            topicPrefix: cfg.topicPrefix,
+            espIp: cfg.espIp,
+            source: cfg.source,
+          }),
+        );
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/apsystems/reload") {
+        const cfg = await restartApsystemsMqtt();
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true, url: cfg.url, source: cfg.source }));
         return;
       }
 

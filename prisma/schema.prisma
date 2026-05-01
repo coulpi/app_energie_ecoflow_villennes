@@ -351,5 +351,15 @@ model ControlState {
   jacuzziTempoBlockRedHp Boolean @default(true)
   // Override manuel : null = automatique. true/false = force et fige.
   jacuzziManualOverride  Boolean?
+  // === APSystems (passerelle Zigbee custom ESP+CC2530) ===
+  // Si null/vide, fallback sur APSYSTEMS_* du .env. Permet de modifier
+  // l'IP du broker MQTT sans redeployer.
+  apsystemsMqttUrl       String?
+  apsystemsMqttUser      String?
+  apsystemsMqttPassword  String?
+  apsystemsTopicPrefix   String?
+  // IP locale de la passerelle ESP : juste utilise pour afficher un lien
+  // "Ouvrir l'interface ESP" depuis l'UI (le worker n'y accede pas).
+  apsystemsEspIp         String?
   updatedAt          DateTime    @updatedAt
 }

@@ -73,7 +73,10 @@ async function main() {
 
   if (env.APSYSTEMS_MOCK) {
     startApsystemsMock(env.APSYSTEMS_MOCK_INTERVAL_S);
-  } else if (env.APSYSTEMS_MQTT_URL) {
+  } else {
+    // startApsystemsMqtt resoud lui-meme la config (DB > env). Pas
+    // besoin de tester env.APSYSTEMS_MQTT_URL : si rien n'est configure,
+    // la fonction retourne sans rien faire.
     try {
       await startApsystemsMqtt();
     } catch (e) {

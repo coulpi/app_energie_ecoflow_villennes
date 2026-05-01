@@ -237,19 +237,70 @@ async function resolveAlert(
 
 let subscriber: ap.ApsystemsSubscriber | null = null;
 
-export async function startApsystemsMqtt(): Promise<void> {
-  if (!env.APSYSTEMS_MQTT_URL) return;
-  log.info("starting apsystems mqtt", {
-    url: env.APSYSTEMS_MQTT_URL,
-    prefix: env.APSYSTEMS_TOPIC_PREFIX,
-  });
+export interface ApsystemsResolvedConfig {
+  url: string | null;
+  username: string | undefined;
+  password: string | undefined;
+  topicPrefix: string;
+  espIp: string | null;
+  source: "db" | "env" | "none";
+}
 
-  subscriber = ap.startApsystemsSubscriber(
-    {
+// Resolution: ControlState (si renseigne) > .env > rien.
+export async function resolveApsystemsConfig(): Promise<ApsystemsResolvedConfig> {
+  const ctrl = (await prisma.controlState.findUnique({
+    where: { key: "default" },
+  })) as Record<string, unknown> | null;
+  const dbUrl = (ctrl?.apsystemsMqttUrl as string | null | undefined)?.trim() || null;
+  const dbUser = (ctrl?.apsystemsMqttUser as string | null | undefined)?.trim() || undefined;
+  const dbPwd = (ctrl?.apsystemsMqttPassword as string | null | undefined) || undefined;
+  const dbPrefix = (ctrl?.apsystemsTopicPrefix as string | null | undefined)?.trim() || null;
+  const dbEspIp = (ctrl?.apsystemsEspIp as string | null | undefined)?.trim() || null;
+  if (dbUrl) {
+    return {
+      url: dbUrl,
+      username: dbUser,
+      password: dbPwd,
+      topicPrefix: dbPrefix ?? env.APSYSTEMS_TOPIC_PREFIX,
+      espIp: dbEspIp,
+      source: "db",
+    };
+  }
+  if (env.APSYSTEMS_MQTT_URL) {
+    return {
       url: env.APSYSTEMS_MQTT_URL,
       username: env.APSYSTEMS_MQTT_USER,
       password: env.APSYSTEMS_MQTT_PASSWORD,
       topicPrefix: env.APSYSTEMS_TOPIC_PREFIX,
+      espIp: dbEspIp,
+      source: "env",
+    };
+  }
+  return {
+    url: null,
+    username: undefined,
+    password: undefined,
+    topicPrefix: env.APSYSTEMS_TOPIC_PREFIX,
+    espIp: dbEspIp,
+    source: "none",
+  };
+}
+
+export async function startApsystemsMqtt(): Promise<void> {
+  const cfg = await resolveApsystemsConfig();
+  if (!cfg.url) return;
+  log.info("starting apsystems mqtt", {
+    url: cfg.url,
+    prefix: cfg.topicPrefix,
+    source: cfg.source,
+  });
+
+  subscriber = ap.startApsystemsSubscriber(
+    {
+      url: cfg.url,
+      username: cfg.username,
+      password: cfg.password,
+      topicPrefix: cfg.topicPrefix,
     },
     async (msg) => {
       const device = await prisma.device.findUnique({
@@ -325,4 +376,18 @@ export async function stopApsystemsMqtt(): Promise<void> {
     await subscriber.stop();
     subscriber = null;
   }
+}
+
+// Stop puis re-resolve la config et re-start. Utilise apres un changement
+// de ControlState pour appliquer la nouvelle URL/credentials sans relancer
+// le worker.
+export async function restartApsystemsMqtt(): Promise<ApsystemsResolvedConfig> {
+  await stopApsystemsMqtt();
+  const cfg = await resolveApsystemsConfig();
+  if (cfg.url) {
+    await startApsystemsMqtt();
+  } else {
+    log.info("apsystems mqtt restart: no URL configured, subscriber stays off");
+  }
+  return cfg;
 }
