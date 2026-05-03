@@ -462,6 +462,112 @@ de chaque DS3 (sous le panneau ou sur la facture).
   jour » — calculer plutôt l'intégrale `pW × dt` côté server (méthode
   utilisée dans `apps/web/app/solar/page.tsx`).
 
+### Passerelle DIY ESP-ECU — mise en service (2ᵉ maison)
+
+Code firmware patience4711 cloné dans `read-APSystems-YC600-QS1-DS3/`
+(non-trackée, juste pour référence locale du `.hex` CC2530 et du source
+ESP). Le firmware ESP `ESP-ECU-v10_9a.bin` flashé en mai 2026.
+
+**Câblage validé en live** (via `readMe.txt` du repo, autorité finale) :
+
+```
+cc2530+cc2591  →  ESP8266 NodeMCU
+   P0_2 (RX)   →  D8 (GPIO15, TX swappé)   [ESP TX → CC RX]
+   P0_3 (TX)   →  D7 (GPIO13, RX swappé)   [CC TX → ESP RX]
+   RST         →  D5 (GPIO14)
+   VCC (3.3V)  →  sortie régulateur 5V→3.3V (PAS le 3V3 du NodeMCU)
+   GND         →  GND commun (ESP, régulateur, module)
+```
+
+⚠️ **Régulateur 3.3V externe obligatoire** : le LDO interne du NodeMCU
+ne tient pas le pic TX du CC2591 (~150 mA). Le 5V du NodeMCU (Vin USB)
+alimente un module step-down 5V→3.3V dédié, dont la sortie pilote VCC
+du CC2591. Le GND IN/OUT du régulateur étant relié en interne, un seul
+fil GND par segment suffit.
+
+⚠️ **Piège câblage TX/RX** : la sérigraphie de certains modules
+CC2530+CC2591 est ambiguë. **NE PAS** se fier aux labels "TX"/"RX",
+toujours raisonner en pin CC2530 (`P0_2` = RX du CC, `P0_3` = TX du
+CC). Symptôme d'inversion : `errorCode 10`, journal `zigbee no
+inverter`, console `readZB nothing received` à chaque `sendSB sent`.
+Inverser les 2 fils data, le test `10;ZBT=2710AABBCC` doit retourner
+`inMessage: FE036710AABBCCA9`.
+
+**Firmware CC2530** : flasher `CC2530ZNP_2591-with-SBL.hex` du dossier
+`CC25xxfirmware ds3/` du zip `cc25xx_firmware.zip` (variante avec
+support PA CC2591). Les `.hex` Zigbee2MQTT (Koenkk) sont incompatibles,
+protocole MT vs APSystems.
+
+**Console websocket** (`/CONSOLE`, mdp `0000`) : commandes utiles
+- `10;DIAG` toggle verbose (montre `sendSB`/`readZB` bruts)
+- `10;HEALTH` test boot du coordinator
+- `10;INIT_N` force re-init coordinator (8 cmd, doit finir sur
+  `zigbee running oke` + `ZB coordinator started`)
+- `10;ZBT=2710AABBCC` test boucle UART CC2530
+- `10;FILES` liste SPIFFS (`Inv_PropN.str` = onduleurs sauvegardés)
+
+**Codes erreur** (cf. `readMe.txt`) :
+- `10` : `AF_DATA_REQUEST failed` (en pratique : pas de réponse UART CC)
+- `11` : pas de `AF_DATA_CONFIRM` (radio émise, pas de réponse onduleur
+  → typique nuit / DC trop faible)
+- `12/13` : pas de `ZDO_SRC_RTG_IND` / `AF_INCOMING_MSG`
+- `50` : rien reçu
+- `100` : pas de réaction matériel (CC2530 absent ?)
+- `200` : coordinator pas up
+
+**Pairing** :
+- Endpoint `GET /PAIR?inv=N` → page polling `/get.Paired` toutes les 9 s.
+  Réponse `{"invID":"1111"}` = en cours, `0000` = échec, autre = OK.
+- Échec **`failed, inverter got id 0000`** = onduleur silencieux, 4
+  causes possibles : (1) DS3 endormi DC trop bas (< ~25 W/MPPT, typique
+  matin tôt / soir / nuit), (2) onduleur déjà appairé à une autre ECU
+  active concurrente sur la même fréquence, (3) SN saisi incorrect, (4)
+  cases panneaux non cochées (cf. ci-dessous).
+- **Fenêtre de pairing utile** : 11h-16h ciel dégagé.
+- **ECU APSystems officielle** : doit être **éteinte** pendant le
+  pairing (un onduleur n'écoute qu'une ECU à la fois ; le firmware
+  patience4711 sait "voler" la paire mais ça échoue si l'ECU officielle
+  poll en parallèle sur la même radio).
+
+**Cases panneaux** (`/INV_CONFIG`, checkboxes `pan1..pan4`) : pas
+cosmétiques. Déclarent au firmware quelles entrées MPPT lire pour ce
+slot. Convention :
+- inv 0 → `pan1` + `pan2` (2 entrées du 1er DS3 DUO)
+- inv 1 → `pan3` + `pan4` (2 entrées du 2ᵉ DS3 DUO)
+- etc.
+
+Si non cochées, polling silencieux même appairage réussi.
+
+**Heure / fenêtre polling** : la page `/GEOCONFIG` accepte `tz` en
+minutes vs GMT et une checkbox DST. **Ne PAS combiner** `tz=+120` ET
+`dst checked` (=> GMT+3, fenêtre polling décalée +1h). Pour la France :
+soit `tz=+120` sans DST (fenêtre simple, à mettre à jour hiver), soit
+`tz=+60` avec DST cochée (auto-saison). Hors fenêtre `polling from / to`
+(fonction de lat/lon + crépuscule), le firmware passe en
+`system nightmode` et désactive polling + parfois init Zigbee.
+
+**Wi-Fi save-corruption** : le save d'`/INV_CONFIG` peut occasionnellement
+réécrire `wificonfig.json` corrompu en SPIFFS → ESP au reboot reste en
+LED bleue continue (mode AP captif). Récupération :
+1. Smartphone Android → SSID `ESP-ECU` ou `ESP-XXXXXX` → portail
+   `192.168.4.1` → ressaisir SSID/mdp Wi-Fi + admin password (`0000`).
+2. Si la connexion échoue (LED reste bleue) : ESP8266 = **2.4 GHz +
+   WPA2 only**. Vérifier que le SSID 2.4 GHz est visible (pas de band
+   steering 5 GHz forcé), et que la box n'est pas en WPA3 only.
+3. Caractères spéciaux dans le mdp Wi-Fi : le portail captif les mange
+   parfois — saisir au clavier, pas au copier-coller.
+
+**Adresse passerelle Villennes** : `192.168.0.3` (DHCP fixe).
+
+**Boucle de pairing typique** (en plein soleil, ECU officielle off) :
+1. `/INV_CONFIG` → onglet inv 0 → SN 12 chiffres + DS3 + cases pan1+pan2 → save
+2. Idem inv 1 (autre SN, pan3+pan4)
+3. `/INV_CONFIG` → inv 0 → bouton **pair** → attendre 30-60 s
+4. `/CONSOLE` (en // dans un autre onglet) avec `10;diag` actif pour
+   suivre les `paircmd 0..3` et le code retour
+5. Idem inv 1
+6. Vérifier sur `/` que les 4 panneaux remontent une production cohérente
+
 ## Schéma BD `Device`
 
 Rôles enum Prisma : `PRODUCTION_METER`, `CONSUMPTION_METER`, `GRID_METER`,
