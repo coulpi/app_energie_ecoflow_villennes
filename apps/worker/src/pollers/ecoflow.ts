@@ -204,6 +204,152 @@ export function extractEcoFlowMetrics(payload: Record<string, unknown>): {
   return { soc, inputW, outputW };
 }
 
+type Battery = { id: string; externalId: string };
+
+// Horodatage du dernier instant où le MQTT privé était sain (connecté).
+// Mis à jour par le watchdog tant que client.connected est vrai. Sert à
+// détecter une connexion morte (certificat EcoFlow expiré, reconnexion
+// mqtt.js qui boucle sur les anciennes credentials) pour forcer une
+// ré-initialisation complète (relogin + nouvelle certification).
+let lastPrivateOkMs = 0;
+let privateWatchdog: NodeJS.Timeout | null = null;
+// Empêche deux ré-inits concurrentes (watchdog + retry initial).
+let privateSetupInFlight = false;
+
+// Délai sans connexion saine au-delà duquel on jette le client et on
+// repart d'un login neuf. mqtt.js reconnecte tout seul les coupures
+// transitoires (reconnectPeriod 5 s) ; ce seuil ne se déclenche que sur
+// une panne durable (cert expiré, API privée injoignable au boot, etc.).
+const PRIVATE_STALE_TIMEOUT_MS = 10 * 60_000;
+
+async function handlePrivateMessage(
+  batteries: Battery[],
+  sn: string,
+  payload: unknown,
+): Promise<void> {
+  pushRecv(sn, payload);
+  try {
+    const device = batteries.find((b) => b.externalId === sn);
+    if (!device) return;
+    const metrics = extractEcoFlowMetrics(payload as Record<string, unknown>);
+    if (
+      metrics.soc === null &&
+      metrics.inputW === null &&
+      metrics.outputW === null
+    ) {
+      return;
+    }
+    let powerW: number | null = null;
+    if (metrics.outputW !== null && metrics.outputW > 0) {
+      powerW = metrics.outputW;
+    } else if (metrics.inputW !== null && metrics.inputW > 0) {
+      powerW = -metrics.inputW;
+    } else if (metrics.outputW !== null || metrics.inputW !== null) {
+      powerW = 0;
+    }
+    await prisma.reading.create({
+      data: {
+        deviceId: device.id,
+        ts: new Date(),
+        powerW,
+        soc: metrics.soc,
+        raw: payload as object,
+      },
+    });
+  } catch (e) {
+    log.warn("ecoflow private mqtt msg failed", {
+      sn,
+      error: (e as Error).message,
+    });
+  }
+}
+
+// Relogin + nouvelle certification + nouvelle connexion MQTT privée.
+// Throw si l'API privée est injoignable : l'appelant gère le retry.
+async function setupPrivateMqtt(batteries: Battery[]): Promise<void> {
+  const priv = new EcoFlowPrivateClient({
+    email: env.ECOFLOW_EMAIL!,
+    password: env.ECOFLOW_PASSWORD!,
+    apiBase: env.ECOFLOW_API_BASE,
+  });
+  const cert = await priv.getMqttCertification();
+  const client = connectEcoFlowPrivateMqtt({
+    cert,
+    serialNumbers: batteries.map((b) => b.externalId),
+    onConnect: () => {
+      lastPrivateOkMs = Date.now();
+      log.info("ecoflow private mqtt subscribed", {
+        devices: batteries.map((b) => b.externalId),
+      });
+    },
+    onMessage: (sn, payload) => void handlePrivateMessage(batteries, sn, payload),
+    onError: (e) =>
+      log.warn("ecoflow private mqtt error", { error: e.message }),
+  });
+  privateMqttClient = client;
+  privateMqttUserId = cert.userId;
+  lastPrivateOkMs = Date.now();
+}
+
+// Boucle de setup avec backoff : retente jusqu'au succès au lieu
+// d'abandonner sur un échec unique (le bug historique : un `fetch failed`
+// transitoire au boot laissait privateMqttClient null pendant des
+// semaines, donc plus aucune commande de pilotage n'aboutissait).
+async function startPrivateMqttWithRetry(batteries: Battery[]): Promise<void> {
+  if (privateSetupInFlight) return;
+  privateSetupInFlight = true;
+  let attempt = 0;
+  try {
+    for (;;) {
+      try {
+        await setupPrivateMqtt(batteries);
+        return;
+      } catch (e) {
+        attempt += 1;
+        const delayMs = Math.min(60_000, 5_000 * attempt);
+        log.warn("ecoflow private mqtt setup failed, retrying", {
+          error: (e as Error).message,
+          attempt,
+          delayMs,
+        });
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  } finally {
+    privateSetupInFlight = false;
+  }
+}
+
+// Watchdog : si la connexion privée reste morte au-delà du seuil, on
+// détruit le client et on relance un setup neuf (relogin + cert). Couvre
+// l'expiration du certificat EcoFlow et les pannes durables que la
+// reconnexion native de mqtt.js ne sait pas réparer.
+function startPrivateMqttWatchdog(batteries: Battery[]): void {
+  if (privateWatchdog) return;
+  privateWatchdog = setInterval(() => {
+    if (privateSetupInFlight) return;
+    const client = privateMqttClient;
+    if (client && client.connected) {
+      lastPrivateOkMs = Date.now();
+      return;
+    }
+    if (Date.now() - lastPrivateOkMs <= PRIVATE_STALE_TIMEOUT_MS) return;
+    log.warn("ecoflow private mqtt stale, ré-initialisation complète", {
+      staleMs: Date.now() - lastPrivateOkMs,
+    });
+    if (client) {
+      try {
+        client.end(true);
+      } catch {
+        /* ignore */
+      }
+    }
+    privateMqttClient = null;
+    privateMqttUserId = null;
+    void startPrivateMqttWithRetry(batteries);
+  }, 60_000);
+}
+
 export async function startEcoFlowMqtt(): Promise<void> {
   const batteries = await prisma.device.findMany({
     where: { enabled: true, type: "ECOFLOW_BATTERY" },
@@ -214,72 +360,14 @@ export async function startEcoFlowMqtt(): Promise<void> {
   }
 
   // Si email/password sont fournis, on utilise l'API privée (mobile)
-  // qui expose tous les quotas (inv.*, pd.*, f32ShowSoc).
+  // qui expose tous les quotas (inv.*, pd.*, f32ShowSoc). Setup en
+  // arrière-plan avec retry + watchdog : on ne bloque pas le démarrage
+  // du worker et on garantit une reconnexion automatique.
   if (env.ECOFLOW_EMAIL && env.ECOFLOW_PASSWORD) {
-    try {
-      const priv = new EcoFlowPrivateClient({
-        email: env.ECOFLOW_EMAIL,
-        password: env.ECOFLOW_PASSWORD,
-        apiBase: env.ECOFLOW_API_BASE,
-      });
-      const cert = await priv.getMqttCertification();
-      const client = connectEcoFlowPrivateMqtt({
-        cert,
-        serialNumbers: batteries.map((b) => b.externalId),
-        onConnect: () =>
-          log.info("ecoflow private mqtt subscribed", {
-            devices: batteries.map((b) => b.externalId),
-          }),
-        onMessage: async (sn, payload) => {
-          pushRecv(sn, payload);
-          try {
-            const device = batteries.find((b) => b.externalId === sn);
-            if (!device) return;
-            const metrics = extractEcoFlowMetrics(
-              payload as Record<string, unknown>,
-            );
-            if (
-              metrics.soc === null &&
-              metrics.inputW === null &&
-              metrics.outputW === null
-            ) {
-              return;
-            }
-            let powerW: number | null = null;
-            if (metrics.outputW !== null && metrics.outputW > 0) {
-              powerW = metrics.outputW;
-            } else if (metrics.inputW !== null && metrics.inputW > 0) {
-              powerW = -metrics.inputW;
-            } else if (metrics.outputW !== null || metrics.inputW !== null) {
-              powerW = 0;
-            }
-            await prisma.reading.create({
-              data: {
-                deviceId: device.id,
-                ts: new Date(),
-                powerW,
-                soc: metrics.soc,
-                raw: payload as object,
-              },
-            });
-          } catch (e) {
-            log.warn("ecoflow private mqtt msg failed", {
-              sn,
-              error: (e as Error).message,
-            });
-          }
-        },
-        onError: (e) =>
-          log.warn("ecoflow private mqtt error", { error: e.message }),
-      });
-      privateMqttClient = client;
-      privateMqttUserId = cert.userId;
-      return;
-    } catch (e) {
-      log.warn("ecoflow private mqtt setup failed, falling back to developer", {
-        error: (e as Error).message,
-      });
-    }
+    const list = batteries.map((b) => ({ id: b.id, externalId: b.externalId }));
+    void startPrivateMqttWithRetry(list);
+    startPrivateMqttWatchdog(list);
+    return;
   }
 
   // Fallback : Developer API (limité aux bmsMaster.* sur Delta Max).
