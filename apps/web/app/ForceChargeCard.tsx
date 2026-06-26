@@ -125,6 +125,8 @@ export default function ForceChargeCard() {
     armed && soc != null && target > 0
       ? Math.max(0, Math.min(100, Math.round((soc / target) * 100)))
       : 0;
+  // Mode durée + plafond SoC atteint → on maintient jusqu'à l'échéance.
+  const holding = running && endMs !== null && soc != null && soc >= target;
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-white/[0.03] backdrop-blur-sm ring-1 ring-amber-500/30 p-4 sm:p-5">
@@ -167,23 +169,36 @@ export default function ForceChargeCard() {
         <div className="relative space-y-3">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-amber-300 text-sm font-semibold">
-              Charge forcée → {s?.forceChargeSoc} %
+              {holding
+                ? `Plafond ${s?.forceChargeSoc} % atteint`
+                : `Charge forcée → ${s?.forceChargeSoc} %`}
             </span>
             <span className="text-[11px] text-zinc-400 tabular-nums">
-              {s?.forceChargeWatts} W{charging ? " · en charge" : s?.switchOn ? " · prise ON" : ""}
+              {s?.forceChargeWatts} W
+              {holding
+                ? " · maintien"
+                : charging
+                  ? " · en charge"
+                  : s?.switchOn
+                    ? " · prise ON"
+                    : ""}
             </span>
           </div>
-          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className="h-full bg-amber-400 transition-[width] duration-700"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
+          {!holding && (
+            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-full bg-amber-400 transition-[width] duration-700"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          )}
           <p className="text-[11px] text-zinc-500">
             {endMs
-              ? `Arrêt auto dans ${fmtRemaining(endMs - nowMs)} (ou à la cible). `
+              ? `Arrêt auto dans ${fmtRemaining(endMs - nowMs)}${holding ? "" : " (ou à la cible)"}. `
               : ""}
-            Tire sur le réseau si le surplus solaire ne suffit pas.
+            {holding
+              ? "Cible atteinte, charge maintenue jusqu'à la fin de la durée."
+              : "Tire sur le réseau si le surplus solaire ne suffit pas."}
           </p>
           <button
             onClick={() => post({ forceChargeSoc: null })}
@@ -286,6 +301,21 @@ export default function ForceChargeCard() {
             </label>
           </div>
 
+          {durationMin.trim() && Number(durationMin) > 0 ? (
+            soc != null && Number(targetSoc) <= soc && (
+              <p className="text-[11px] text-sky-400">
+                Durée prioritaire : SoC actuel ({Math.round(soc)} %) ≥ cible — la
+                cible sert de plafond, la charge tient toute la durée.
+              </p>
+            )
+          ) : (
+            soc != null && Number(targetSoc) <= soc && (
+              <p className="text-[11px] text-amber-400">
+                ⚠️ SoC actuel ({Math.round(soc)} %) ≥ cible : sans durée, le
+                forçage s&rsquo;arrêtera aussitôt. Ajoute une durée ou monte la cible.
+              </p>
+            )
+          )}
           <button
             onClick={start}
             disabled={

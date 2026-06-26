@@ -606,18 +606,25 @@ réseau** si le surplus solaire ne suffit pas. Piloté depuis le dashboard
   - `startAt` (ISO) → `forceChargeStartAt`. null = démarrage immédiat. Si
     dans le futur, le forçage est **armé** mais le mode normal continue
     jusqu'à l'heure ; le worker ne prend la main qu'à `startAt`.
-  - `durationMin` → `forceChargeEndAt = (startAt ?? now) + durée`. Arrêt
-    auto au **1er des deux** : cible SoC atteinte OU échéance dépassée.
+  - `durationMin` → `forceChargeEndAt = (startAt ?? now) + durée`. null =
+    pas de limite de durée.
   - L'API calcule les timestamps absolus (web et worker partagent l'horloge
     du même hôte) ; le worker compare en `Date.now()`.
+- **Sémantique cible vs durée** (`durationMode = forceChargeEndAt != null`) :
+  - **Sans durée** : la cible SoC est l'**objectif** → on termine le forçage
+    en l'atteignant (ou si batterie pleine détectée).
+  - **Avec durée** : la **durée est prioritaire** → on charge jusqu'à
+    l'échéance, et la cible SoC n'est qu'un **plafond de sécurité**. Une fois
+    le plafond atteint (ou batterie pleine), on **maintient** (prise OFF,
+    reste armé) jusqu'à l'échéance sans réessayer de charger — flag module
+    `forceChargeCeilingHit` pour éviter le cyclage du relais Tuya.
 - Worker : dispatch en tête de `tickFollowLoad`
   (`apps/worker/src/rules/follow-load.ts`) gère échéance / démarrage
-  programmé, puis `tickForceCharge` : prise AC ON +
+  programmé, puis `tickForceCharge(ctrl, durationMode)` : prise AC ON +
   `setChargeWatts(forceChargeWatts)`. Relève le plafond BMS (`maxChgSoc`)
-  à `max(cible, maxChargeSoc)` pour ne pas couper avant la cible, puis le
-  **restaure** à la fin (cible atteinte, batterie pleine détectée via la
-  garde prise ON >2 min + tirage <30 W, durée écoulée, ou annulation).
-  `endForceCharge` remet `forceChargeSoc/StartAt/EndAt = null`.
+  à `max(cible, maxChargeSoc)`, puis le **restaure** à la fin (objectif
+  atteint sans durée, durée écoulée, ou annulation). `endForceCharge` remet
+  `forceChargeSoc/StartAt/EndAt = null` et `forceChargeCeilingHit = false`.
 
 ## Accès & déploiement
 

@@ -35,6 +35,10 @@ let switchOnAtMs: number | null = null;
 // Forçage de charge : true une fois qu'on a relevé le plafond BMS
 // (maxChgSoc) pour pouvoir atteindre la cible. On le restaure à la fin.
 let forceMaxSocPushed = false;
+// Mode "durée prioritaire" : true une fois le plafond SoC (cible) atteint
+// ou la batterie pleine détectée. On reste alors armé jusqu'à l'échéance,
+// prise OFF, sans réessayer de charger (évite le cyclage du relais Tuya).
+let forceChargeCeilingHit = false;
 // Suit l'état précédent de la fenêtre tempo : on n'intervient sur la
 // priorité PowerStream que sur transition (in→out ou out→in).
 let lastInTempoWindow: boolean | null = null;
@@ -165,6 +169,7 @@ async function endForceCharge(maxChargeSoc: number): Promise<void> {
     }
     forceMaxSocPushed = false;
   }
+  forceChargeCeilingHit = false;
   await prisma.controlState.update({
     where: { key: "default" },
     data: {
@@ -175,11 +180,29 @@ async function endForceCharge(maxChargeSoc: number): Promise<void> {
   });
 }
 
-async function tickForceCharge(ctrl: {
-  forceChargeSoc?: number | null;
-  forceChargeWatts?: number | null;
-  maxChargeSoc: number;
-}): Promise<void> {
+/** Maintien "plafond atteint" : prise OFF, on reste armé jusqu'à l'échéance. */
+async function holdAtCeiling(): Promise<void> {
+  forceChargeCeilingHit = true;
+  await setCharge(0);
+  await setSwitch(false);
+  await setDischarge(0);
+}
+
+/**
+ * @param durationMode true si une échéance (forceChargeEndAt) est définie.
+ *   Dans ce cas la **durée est prioritaire** : on charge jusqu'à l'échéance
+ *   et la cible SoC n'est qu'un **plafond de sécurité** (on s'arrête de
+ *   charger en l'atteignant mais on reste armé). Sans durée, la cible est
+ *   l'objectif : on termine le forçage en l'atteignant.
+ */
+async function tickForceCharge(
+  ctrl: {
+    forceChargeSoc?: number | null;
+    forceChargeWatts?: number | null;
+    maxChargeSoc: number;
+  },
+  durationMode: boolean,
+): Promise<void> {
   const target = ctrl.forceChargeSoc as number;
   const watts = ctrl.forceChargeWatts ?? 1000;
   const m = await buildSnapshot();
@@ -190,10 +213,29 @@ async function tickForceCharge(ctrl: {
     last.switchOn = m.switch_state;
   }
 
-  // Cible atteinte → fin du forçage, retour au comportement normal.
+  // Plafond SoC atteint.
   if (soc !== null && soc >= target) {
+    if (durationMode) {
+      // Durée prioritaire : on maintient (prise OFF) jusqu'à l'échéance.
+      if (!forceChargeCeilingHit) {
+        log.info("force-charge: plafond SoC atteint, maintien jusqu'à l'échéance", {
+          soc,
+          target,
+        });
+      }
+      await holdAtCeiling();
+      return;
+    }
     log.info("force-charge: cible SoC atteinte, arrêt", { soc, target });
     await endForceCharge(ctrl.maxChargeSoc);
+    return;
+  }
+
+  // En mode durée, une fois le plafond touché on n'essaie pas de regagner
+  // les quelques % perdus (auto-décharge) : on reste en maintien pour ne
+  // pas faire cycler le relais Tuya.
+  if (durationMode && forceChargeCeilingHit) {
+    await holdAtCeiling();
     return;
   }
 
@@ -242,6 +284,14 @@ async function tickForceCharge(ctrl: {
         plug.powerW !== null &&
         plug.powerW < FULL_BATTERY_PLUG_THRESHOLD_W
       ) {
+        if (durationMode) {
+          log.info("force-charge: batterie pleine, maintien jusqu'à l'échéance", {
+            plugW: plug.powerW,
+            soc,
+          });
+          await holdAtCeiling();
+          return;
+        }
         log.info("force-charge: batterie pleine détectée, arrêt forçage", {
           plugW: plug.powerW,
           soc,
@@ -312,7 +362,7 @@ export async function tickFollowLoad(): Promise<void> {
     // normal continue jusqu'à l'heure de début. Sinon on prend la main.
     const pending = startAt !== null && now < startAt;
     if (!pending) {
-      await tickForceCharge(ctrl);
+      await tickForceCharge(ctrl, endAt !== null);
       return;
     }
     // (armé mais en attente : on retombe dans le flux normal ci-dessous ;
