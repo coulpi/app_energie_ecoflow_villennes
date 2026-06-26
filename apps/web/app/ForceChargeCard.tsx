@@ -5,18 +5,53 @@ import { useEffect, useRef, useState } from "react";
 interface ForceChargeState {
   forceChargeSoc: number | null;
   forceChargeWatts: number;
+  forceChargeStartAt: string | null;
+  forceChargeEndAt: string | null;
+  serverNow: string;
   batterySoc: number | null;
   switchOn: boolean | null;
   batteryPowerW: number | null;
+}
+
+// "HH:MM" (heure locale) → Date ISO future. Si l'heure est déjà passée
+// aujourd'hui, on cale au lendemain.
+function timeToIso(hhmm: string): string | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  const d = new Date();
+  d.setHours(h, min, 0, 0);
+  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
+function fmtRemaining(ms: number): string {
+  if (ms <= 0) return "0 min";
+  const totalMin = Math.ceil(ms / 60_000);
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m}`;
+}
+
+function fmtClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function ForceChargeCard() {
   const [s, setS] = useState<ForceChargeState | null>(null);
   const [targetSoc, setTargetSoc] = useState("90");
   const [watts, setWatts] = useState("1000");
+  const [scheduleMode, setScheduleMode] = useState<"now" | "at">("now");
+  const [startTime, setStartTime] = useState("02:00");
+  const [durationMin, setDurationMin] = useState("");
   const [busy, setBusy] = useState(false);
-  // Tant que l'utilisateur n'a pas touché les champs, on les garde alignés
-  // sur la dernière valeur serveur.
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const touched = useRef(false);
 
   async function refresh() {
@@ -39,6 +74,12 @@ export default function ForceChargeCard() {
     return () => clearInterval(id);
   }, []);
 
+  // Horloge locale pour les comptes à rebours.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   async function post(payload: Record<string, unknown>) {
     setBusy(true);
     try {
@@ -53,12 +94,35 @@ export default function ForceChargeCard() {
     }
   }
 
-  const active = s?.forceChargeSoc != null;
+  function start() {
+    touched.current = false;
+    const payload: Record<string, unknown> = {
+      forceChargeSoc: Number(targetSoc),
+      forceChargeWatts: Number(watts),
+    };
+    if (scheduleMode === "at") {
+      const iso = timeToIso(startTime);
+      if (!iso) return;
+      payload.startAt = iso;
+    }
+    const dur = Number(durationMin);
+    if (durationMin.trim() && Number.isFinite(dur) && dur > 0) {
+      payload.durationMin = dur;
+    }
+    post(payload);
+  }
+
+  const armed = s?.forceChargeSoc != null;
+  const startMs = s?.forceChargeStartAt ? new Date(s.forceChargeStartAt).getTime() : null;
+  const endMs = s?.forceChargeEndAt ? new Date(s.forceChargeEndAt).getTime() : null;
+  const pending = armed && startMs !== null && nowMs < startMs;
+  const running = armed && !pending;
+
   const soc = s?.batterySoc ?? null;
   const target = s?.forceChargeSoc ?? Number(targetSoc);
   const charging = s?.batteryPowerW != null && s.batteryPowerW < -30;
   const pct =
-    active && soc != null && target > 0
+    armed && soc != null && target > 0
       ? Math.max(0, Math.min(100, Math.round((soc / target) * 100)))
       : 0;
 
@@ -74,7 +138,32 @@ export default function ForceChargeCard() {
         </span>
       </div>
 
-      {active ? (
+      {pending ? (
+        <div className="relative space-y-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sky-300 text-sm font-semibold">
+              Programmé à {startMs ? fmtClock(s!.forceChargeStartAt!) : "—"} → {s?.forceChargeSoc} %
+            </span>
+            <span className="text-[11px] text-zinc-400 tabular-nums">
+              dans {startMs ? fmtRemaining(startMs - nowMs) : "—"}
+            </span>
+          </div>
+          <p className="text-[11px] text-zinc-500">
+            {s?.forceChargeWatts} W
+            {endMs
+              ? ` · s'arrête à ${fmtClock(s!.forceChargeEndAt!)} ou à la cible`
+              : " · jusqu'à la cible"}
+            . Le pilotage normal continue jusqu&rsquo;au démarrage.
+          </p>
+          <button
+            onClick={() => post({ forceChargeSoc: null })}
+            disabled={busy}
+            className="btn-ghost text-xs w-full justify-center"
+          >
+            Annuler la programmation
+          </button>
+        </div>
+      ) : running ? (
         <div className="relative space-y-3">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-amber-300 text-sm font-semibold">
@@ -91,8 +180,10 @@ export default function ForceChargeCard() {
             />
           </div>
           <p className="text-[11px] text-zinc-500">
-            Tire sur le réseau si le surplus solaire ne suffit pas. S&rsquo;arrête
-            automatiquement à la cible.
+            {endMs
+              ? `Arrêt auto dans ${fmtRemaining(endMs - nowMs)} (ou à la cible). `
+              : ""}
+            Tire sur le réseau si le surplus solaire ne suffit pas.
           </p>
           <button
             onClick={() => post({ forceChargeSoc: null })}
@@ -141,18 +232,70 @@ export default function ForceChargeCard() {
               </div>
             </label>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5 text-sm">
+              <span className="text-xs text-zinc-400">Démarrage</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setScheduleMode("now")}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs transition ${
+                    scheduleMode === "now"
+                      ? "bg-amber-700/80 text-white"
+                      : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                  }`}
+                >
+                  Maintenant
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleMode("at")}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs transition ${
+                    scheduleMode === "at"
+                      ? "bg-sky-700/80 text-white"
+                      : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                  }`}
+                >
+                  Programmé
+                </button>
+              </div>
+              {scheduleMode === "at" && (
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="input-base"
+                />
+              )}
+            </div>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-xs text-zinc-400">Durée max</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  step={15}
+                  placeholder="illimité"
+                  value={durationMin}
+                  onChange={(e) => setDurationMin(e.target.value)}
+                  className="input-base flex-1 min-w-0"
+                />
+                <span className="text-xs text-zinc-500 w-8 text-right">min</span>
+              </div>
+            </label>
+          </div>
+
           <button
-            onClick={() => {
-              touched.current = false;
-              post({
-                forceChargeSoc: Number(targetSoc),
-                forceChargeWatts: Number(watts),
-              });
-            }}
-            disabled={busy || !Number.isFinite(Number(targetSoc))}
+            onClick={start}
+            disabled={
+              busy ||
+              !Number.isFinite(Number(targetSoc)) ||
+              (scheduleMode === "at" && !timeToIso(startTime))
+            }
             className="btn-primary w-full justify-center"
           >
-            Lancer la charge forcée
+            {scheduleMode === "at" ? "Programmer la charge forcée" : "Lancer la charge forcée"}
           </button>
         </div>
       )}

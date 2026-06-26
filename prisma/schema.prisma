@@ -340,6 +340,13 @@ model ControlState {
   // forceChargeSoc à null automatiquement. Prioritaire sur tous les modes.
   forceChargeSoc     Int?
   forceChargeWatts   Int         @default(1000)
+  // Timer optionnel du forçage :
+  //  - forceChargeStartAt : moment de démarrage. null = immédiat. Si dans
+  //    le futur, le forçage est "armé" mais le mode normal continue jusque-là.
+  //  - forceChargeEndAt : échéance d'arrêt automatique. null = pas de limite.
+  //    Le forçage s'arrête au 1er des deux : cible SoC atteinte ou échéance.
+  forceChargeStartAt DateTime?
+  forceChargeEndAt   DateTime?
   // === Jacuzzi Intex (chauffage piloté par surplus) ===
   // Si false : la boucle dort, l'utilisateur garde la main via l'app Intex.
   jacuzziEnabled         Boolean @default(false)

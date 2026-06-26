@@ -588,7 +588,8 @@ Types enum Prisma : `TUYA_METER`, `TUYA_SWITCH`, `ECOFLOW_BATTERY`,
   `powerstreamPriority`.
 - Loads : `loadsBaselineW` (override manuel ou null = auto).
 - Forçage charge : `forceChargeSoc` (null = inactif, sinon SoC cible %),
-  `forceChargeWatts` (1000). Voir section ci-dessous.
+  `forceChargeWatts` (1000), `forceChargeStartAt` / `forceChargeEndAt`
+  (timer optionnel). Voir section ci-dessous.
 
 ## Forçage manuel de charge
 
@@ -597,16 +598,26 @@ Recharge la batterie jusqu'à un SoC cible **quel que soit le mode**
 réseau** si le surplus solaire ne suffit pas. Piloté depuis le dashboard
 `/` (carte « Forcer la recharge »).
 
-- UI : `apps/web/app/ForceChargeCard.tsx` → `POST /api/control/force-charge`
-  (`{forceChargeSoc, forceChargeWatts}` ; `forceChargeSoc: null` = arrêt).
-  `GET` renvoie l'état + SoC live pour la barre de progression.
-- Worker : `tickForceCharge`, en tête de `tickFollowLoad`
-  (`apps/worker/src/rules/follow-load.ts`). Tant que `forceChargeSoc` est
-  défini : prise AC ON + `setChargeWatts(forceChargeWatts)`. Relève le
-  plafond BMS (`maxChgSoc`) à `max(cible, maxChargeSoc)` pour ne pas couper
-  avant la cible, puis le **restaure** à la fin (cible atteinte, batterie
-  pleine détectée via la garde prise ON >2 min + tirage <30 W, ou
-  annulation). Se désactive seul en remettant `forceChargeSoc = null`.
+- UI : `apps/web/app/ForceChargeCard.tsx` → `POST /api/control/force-charge`.
+  Corps : `{forceChargeSoc, forceChargeWatts, startAt?, durationMin?}`
+  (`forceChargeSoc: null` = arrêt/annulation). `GET` renvoie l'état + SoC
+  live + `serverNow` pour les barres de progression / comptes à rebours.
+- **Timer** (les deux optionnels) :
+  - `startAt` (ISO) → `forceChargeStartAt`. null = démarrage immédiat. Si
+    dans le futur, le forçage est **armé** mais le mode normal continue
+    jusqu'à l'heure ; le worker ne prend la main qu'à `startAt`.
+  - `durationMin` → `forceChargeEndAt = (startAt ?? now) + durée`. Arrêt
+    auto au **1er des deux** : cible SoC atteinte OU échéance dépassée.
+  - L'API calcule les timestamps absolus (web et worker partagent l'horloge
+    du même hôte) ; le worker compare en `Date.now()`.
+- Worker : dispatch en tête de `tickFollowLoad`
+  (`apps/worker/src/rules/follow-load.ts`) gère échéance / démarrage
+  programmé, puis `tickForceCharge` : prise AC ON +
+  `setChargeWatts(forceChargeWatts)`. Relève le plafond BMS (`maxChgSoc`)
+  à `max(cible, maxChargeSoc)` pour ne pas couper avant la cible, puis le
+  **restaure** à la fin (cible atteinte, batterie pleine détectée via la
+  garde prise ON >2 min + tirage <30 W, durée écoulée, ou annulation).
+  `endForceCharge` remet `forceChargeSoc/StartAt/EndAt = null`.
 
 ## Accès & déploiement
 

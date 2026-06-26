@@ -167,7 +167,11 @@ async function endForceCharge(maxChargeSoc: number): Promise<void> {
   }
   await prisma.controlState.update({
     where: { key: "default" },
-    data: { forceChargeSoc: null } as never,
+    data: {
+      forceChargeSoc: null,
+      forceChargeStartAt: null,
+      forceChargeEndAt: null,
+    } as never,
   });
 }
 
@@ -279,17 +283,44 @@ export async function tickFollowLoad(): Promise<void> {
         maxChargeSoc: number;
         forceChargeSoc?: number | null;
         forceChargeWatts?: number | null;
+        forceChargeStartAt?: Date | null;
+        forceChargeEndAt?: Date | null;
       }
     | null;
   if (!ctrl) return;
 
   // === Forçage manuel de charge : prioritaire sur tous les modes ===
   if (ctrl.forceChargeSoc != null) {
-    await tickForceCharge(ctrl);
-    return;
+    const now = Date.now();
+    const startAt = ctrl.forceChargeStartAt
+      ? new Date(ctrl.forceChargeStartAt).getTime()
+      : null;
+    const endAt = ctrl.forceChargeEndAt
+      ? new Date(ctrl.forceChargeEndAt).getTime()
+      : null;
+
+    // Échéance dépassée → arrêt automatique (timer écoulé).
+    if (endAt !== null && now >= endAt) {
+      log.info("force-charge: durée écoulée, arrêt automatique", {
+        soc: (await buildSnapshot()).battery_soc,
+      });
+      await endForceCharge(ctrl.maxChargeSoc);
+      return;
+    }
+
+    // Démarrage programmé pas encore atteint → on n'intervient pas, le mode
+    // normal continue jusqu'à l'heure de début. Sinon on prend la main.
+    const pending = startAt !== null && now < startAt;
+    if (!pending) {
+      await tickForceCharge(ctrl);
+      return;
+    }
+    // (armé mais en attente : on retombe dans le flux normal ci-dessous ;
+    // le bloc de restauration gère un éventuel plafond BMS resté relevé.)
   }
-  // Forçage annulé alors que le plafond BMS avait été relevé (ex. annulation
-  // depuis l'UI) : on restaure le plafond avant de reprendre le cours normal.
+  // Forçage inactif/en attente alors que le plafond BMS avait été relevé
+  // (ex. annulation depuis l'UI) : on restaure le plafond avant de reprendre
+  // le cours normal.
   if (forceMaxSocPushed) {
     try {
       await applyAction(
