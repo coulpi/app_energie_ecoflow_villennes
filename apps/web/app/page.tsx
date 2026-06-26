@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDashboardSnapshot } from "@/lib/snapshot";
+import ForceChargeCard from "./ForceChargeCard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -289,6 +290,9 @@ export default async function Page() {
           icon={GearIcon}
         />
       </div>
+
+      {/* Forçage manuel de la recharge batterie */}
+      <ForceChargeCard />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 pt-2">
         <Link href="/flow" className="btn-ghost justify-center">Flux d&rsquo;énergie</Link>

@@ -333,6 +333,13 @@ model ControlState {
   minDischargeSoc    Int         @default(20)
   // SoC maximum visé en charge.
   maxChargeSoc       Int         @default(95)
+  // === Forçage manuel de charge ===
+  // Si null : inactif. Sinon : SoC cible (%). La boucle charge la
+  // batterie (en tirant sur le réseau si le surplus solaire ne suffit
+  // pas) à forceChargeWatts jusqu'à atteindre la cible, puis remet
+  // forceChargeSoc à null automatiquement. Prioritaire sur tous les modes.
+  forceChargeSoc     Int?
+  forceChargeWatts   Int         @default(1000)
   // === Jacuzzi Intex (chauffage piloté par surplus) ===
   // Si false : la boucle dort, l'utilisateur garde la main via l'app Intex.
   jacuzziEnabled         Boolean @default(false)

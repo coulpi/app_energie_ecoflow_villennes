@@ -32,6 +32,9 @@ const FULL_BATTERY_PLUG_THRESHOLD_W = 30;
 let deficitStartedAtMs: number | null = null;
 let lastOffAtMs: number | null = null;
 let switchOnAtMs: number | null = null;
+// Forçage de charge : true une fois qu'on a relevé le plafond BMS
+// (maxChgSoc) pour pouvoir atteindre la cible. On le restaure à la fin.
+let forceMaxSocPushed = false;
 // Suit l'état précédent de la fenêtre tempo : on n'intervient sur la
 // priorité PowerStream que sur transition (in→out ou out→in).
 let lastInTempoWindow: boolean | null = null;
@@ -133,6 +136,124 @@ async function setDischarge(watts: number): Promise<void> {
   log.info("follow-load: décharge", { watts: w });
 }
 
+/**
+ * Forçage manuel de charge (prioritaire sur tous les modes).
+ *
+ * Tant que `forceChargeSoc` est défini, on charge la batterie à
+ * `forceChargeWatts` (prise AC ON), en tirant sur le réseau si le surplus
+ * solaire ne suffit pas, jusqu'à atteindre la cible. On relève au passage
+ * le plafond BMS (maxChgSoc) pour que la batterie ne coupe pas avant la
+ * cible, puis on le restaure à la fin. Le forçage se termine quand le SoC
+ * atteint la cible OU quand on détecte que la batterie est réellement
+ * pleine (prise ON > 2 min et tirage AC < 30 W).
+ */
+async function endForceCharge(maxChargeSoc: number): Promise<void> {
+  await setCharge(0);
+  await setSwitch(false);
+  await setDischarge(0);
+  if (forceMaxSocPushed) {
+    try {
+      await applyAction(
+        { action: "ecoflow.setMaxChargeSoc", params: { soc: maxChargeSoc } },
+        { snapshot: await buildSnapshot() },
+      );
+      log.info("force-charge: plafond BMS restauré", { maxChargeSoc });
+    } catch (e) {
+      log.warn("force-charge: restauration maxChgSoc échouée", {
+        error: (e as Error).message,
+      });
+    }
+    forceMaxSocPushed = false;
+  }
+  await prisma.controlState.update({
+    where: { key: "default" },
+    data: { forceChargeSoc: null } as never,
+  });
+}
+
+async function tickForceCharge(ctrl: {
+  forceChargeSoc?: number | null;
+  forceChargeWatts?: number | null;
+  maxChargeSoc: number;
+}): Promise<void> {
+  const target = ctrl.forceChargeSoc as number;
+  const watts = ctrl.forceChargeWatts ?? 1000;
+  const m = await buildSnapshot();
+  const soc = m.battery_soc;
+
+  // Resync prise (cf. tickFollowLoad) : si quelqu'un a coupé la prise.
+  if (m.switch_state !== null && m.switch_state !== last.switchOn) {
+    last.switchOn = m.switch_state;
+  }
+
+  // Cible atteinte → fin du forçage, retour au comportement normal.
+  if (soc !== null && soc >= target) {
+    log.info("force-charge: cible SoC atteinte, arrêt", { soc, target });
+    await endForceCharge(ctrl.maxChargeSoc);
+    return;
+  }
+
+  // Relève le plafond BMS si la cible est au-dessus de maxChargeSoc,
+  // sinon le BMS couperait la charge avant d'atteindre la cible.
+  if (!forceMaxSocPushed) {
+    const wantMax = Math.max(target, ctrl.maxChargeSoc);
+    try {
+      await applyAction(
+        { action: "ecoflow.setMaxChargeSoc", params: { soc: wantMax } },
+        { snapshot: m },
+      );
+      log.info("force-charge: démarrage", { target, watts, bmsMaxSoc: wantMax });
+    } catch (e) {
+      log.warn("force-charge: setMaxChargeSoc échoué", {
+        error: (e as Error).message,
+      });
+    }
+    forceMaxSocPushed = true;
+  }
+
+  // Détection batterie pleine : prise ON > 2 min, tirage AC < 30 W alors
+  // qu'on commande une charge → le BMS refuse, la batterie est réellement
+  // pleine (cible inatteignable). On arrête le forçage.
+  if (
+    last.switchOn === true &&
+    switchOnAtMs !== null &&
+    Date.now() - switchOnAtMs > FULL_BATTERY_GRACE_MS &&
+    last.chargeW !== null &&
+    last.chargeW > 0
+  ) {
+    const battery = await prisma.device.findFirst({
+      where: { enabled: true, role: "BATTERY_AC_SWITCH" as never },
+    });
+    if (battery) {
+      const plug = await prisma.reading.findFirst({
+        where: {
+          deviceId: battery.id,
+          ts: { gte: new Date(Date.now() - 90_000) },
+        },
+        orderBy: { ts: "desc" },
+        select: { powerW: true },
+      });
+      if (
+        plug &&
+        plug.powerW !== null &&
+        plug.powerW < FULL_BATTERY_PLUG_THRESHOLD_W
+      ) {
+        log.info("force-charge: batterie pleine détectée, arrêt forçage", {
+          plugW: plug.powerW,
+          soc,
+        });
+        await endForceCharge(ctrl.maxChargeSoc);
+        return;
+      }
+    }
+  }
+
+  // Charge forcée : prise ON, charge à puissance fixe (réseau si besoin).
+  await setDischarge(0);
+  await setSwitch(true);
+  await setCharge(watts);
+}
+
 export async function tickFollowLoad(): Promise<void> {
   const ctrl = (await prisma.controlState.findUnique({
     where: { key: "default" },
@@ -156,9 +277,37 @@ export async function tickFollowLoad(): Promise<void> {
         powerstreamSn?: string | null;
         minDischargeSoc: number;
         maxChargeSoc: number;
+        forceChargeSoc?: number | null;
+        forceChargeWatts?: number | null;
       }
     | null;
-  if (!ctrl || ctrl.mode !== "FOLLOW_LOAD") return;
+  if (!ctrl) return;
+
+  // === Forçage manuel de charge : prioritaire sur tous les modes ===
+  if (ctrl.forceChargeSoc != null) {
+    await tickForceCharge(ctrl);
+    return;
+  }
+  // Forçage annulé alors que le plafond BMS avait été relevé (ex. annulation
+  // depuis l'UI) : on restaure le plafond avant de reprendre le cours normal.
+  if (forceMaxSocPushed) {
+    try {
+      await applyAction(
+        { action: "ecoflow.setMaxChargeSoc", params: { soc: ctrl.maxChargeSoc } },
+        { snapshot: await buildSnapshot() },
+      );
+      log.info("force-charge: annulé, plafond BMS restauré", {
+        maxChargeSoc: ctrl.maxChargeSoc,
+      });
+    } catch (e) {
+      log.warn("force-charge: restauration maxChgSoc échouée", {
+        error: (e as Error).message,
+      });
+    }
+    forceMaxSocPushed = false;
+  }
+
+  if (ctrl.mode !== "FOLLOW_LOAD") return;
 
   const m = await buildSnapshot();
   if (m.consumption_W === null || m.surplus_W === null) return;

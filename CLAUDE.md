@@ -587,6 +587,26 @@ Types enum Prisma : `TUYA_METER`, `TUYA_SWITCH`, `ECOFLOW_BATTERY`,
 - PowerStream : `powerstreamSn`, `powerstreamPermanentW`,
   `powerstreamPriority`.
 - Loads : `loadsBaselineW` (override manuel ou null = auto).
+- Forçage charge : `forceChargeSoc` (null = inactif, sinon SoC cible %),
+  `forceChargeWatts` (1000). Voir section ci-dessous.
+
+## Forçage manuel de charge
+
+Recharge la batterie jusqu'à un SoC cible **quel que soit le mode**
+(prioritaire sur FOLLOW_LOAD / RULES / fenêtre Tempo), en **tirant sur le
+réseau** si le surplus solaire ne suffit pas. Piloté depuis le dashboard
+`/` (carte « Forcer la recharge »).
+
+- UI : `apps/web/app/ForceChargeCard.tsx` → `POST /api/control/force-charge`
+  (`{forceChargeSoc, forceChargeWatts}` ; `forceChargeSoc: null` = arrêt).
+  `GET` renvoie l'état + SoC live pour la barre de progression.
+- Worker : `tickForceCharge`, en tête de `tickFollowLoad`
+  (`apps/worker/src/rules/follow-load.ts`). Tant que `forceChargeSoc` est
+  défini : prise AC ON + `setChargeWatts(forceChargeWatts)`. Relève le
+  plafond BMS (`maxChgSoc`) à `max(cible, maxChargeSoc)` pour ne pas couper
+  avant la cible, puis le **restaure** à la fin (cible atteinte, batterie
+  pleine détectée via la garde prise ON >2 min + tirage <30 W, ou
+  annulation). Se désactive seul en remettant `forceChargeSoc = null`.
 
 ## Accès & déploiement
 
