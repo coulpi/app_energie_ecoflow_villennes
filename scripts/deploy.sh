@@ -73,6 +73,17 @@ sleep 5
 docker compose exec -T web npx prisma db push --schema=/repo/prisma/schema.prisma --skip-generate || \
   warn "db push a échoué — la base sera peut-être déjà en sync, à vérifier"
 
+# 5b. Redémarrage du worker APRÈS la migration.
+# IMPORTANT : `up -d` (étape 4) démarre le worker AVANT que le db push
+# ci-dessus ait appliqué le schéma. Or le worker fait des requêtes Prisma
+# au boot (ex. startEcoFlowMqtt → device.findMany), qui sélectionnent
+# toutes les colonnes du client généré. Si une migration ajoute une
+# colonne, ces requêtes plantent au démarrage et certaines initialisations
+# one-shot (connexion MQTT privé EcoFlow) restent mortes jusqu'au prochain
+# redémarrage. On relance donc le worker contre le schéma à jour.
+info "Redémarrage du worker (init contre le schéma migré)"
+docker compose restart worker || warn "restart worker a échoué — à vérifier"
+
 # 6. Nettoyage Docker (libère le cache de build, images intermédiaires, etc.)
 # Évite que /var/lib/docker grossisse sans limite à chaque build (~40 GB
 # régulièrement). Ne touche pas aux conteneurs en cours d'exécution ni aux
