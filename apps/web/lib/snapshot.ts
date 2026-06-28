@@ -119,6 +119,8 @@ export interface DashboardSnapshot {
   batteryPowerW: number | null;
   switchOn: boolean | null;
   acSwitchPowerW: number | null;
+  /** Connexion cloud Tuya de la prise AC : false = commandes non délivrées. */
+  acSwitchOnline: boolean | null;
   controlMode: string;
   followLoadOffsetW: number | null;
   followLoadMinW: number | null;
@@ -167,6 +169,12 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     lastByRole("BATTERY_AC_SWITCH"),
     prisma.controlState.findUnique({ where: { key: "default" } }),
   ]);
+
+  // Connexion cloud Tuya de la prise AC (champ persisté par le poller).
+  const swDevice = (await prisma.device.findFirst({
+    where: { enabled: true, role: "BATTERY_AC_SWITCH" as never },
+    select: { online: true } as never,
+  })) as { online?: boolean | null } | null;
 
   let productionW = prod?.powerW ?? null;
   // Plancher : sous 10 W, le panneau / Tuya remonte du bruit nocturne
@@ -332,6 +340,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     batteryPowerW,
     switchOn: sw?.switchOn ?? null,
     acSwitchPowerW: sw?.powerW ?? null,
+    acSwitchOnline: swDevice?.online ?? null,
     controlMode: ctrl?.mode ?? "RULES",
     followLoadOffsetW: ctrl?.followLoadOffsetW ?? null,
     followLoadMinW: ctrl?.followLoadMinW ?? null,

@@ -72,6 +72,11 @@ model Device {
   vendorMeta   Json?
   capabilities Json?
   enabled      Boolean      @default(true)
+  // Connexion au cloud Tuya (pour les devices TUYA_*). null = jamais vérifié.
+  // false = le boîtier ne reçoit plus les commandes (Wi-Fi / lien cloud HS) ;
+  // le /status renvoie alors un état figé en cache. Rafraîchi par le poller.
+  online       Boolean?
+  onlineAt     DateTime?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 

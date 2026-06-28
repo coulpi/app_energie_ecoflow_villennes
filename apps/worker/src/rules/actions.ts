@@ -105,12 +105,19 @@ export async function applyAction(
       const code =
         (sw.capabilities as { switchCode?: string } | null)?.switchCode ??
         "switch_1";
-      await tuya().switchOnOff(
-        sw.externalId,
-        a.action === "tuya.switch.on",
-        code,
-      );
-      return { device: sw.externalId, switch: a.action === "tuya.switch.on" };
+      const want = a.action === "tuya.switch.on";
+      // Tuya renvoie `result:false` quand la commande n'a pas pu être
+      // délivrée (prise déconnectée du cloud). On le rend visible au lieu
+      // de l'ignorer silencieusement.
+      const delivered = await tuya().switchOnOff(sw.externalId, want, code);
+      if (!delivered) {
+        log.warn("tuya: commande non délivrée (prise hors-ligne ?)", {
+          device: sw.externalId,
+          name: sw.name,
+          want,
+        });
+      }
+      return { device: sw.externalId, switch: want, delivered };
     }
 
     case "ecoflow.setChargeWatts": {

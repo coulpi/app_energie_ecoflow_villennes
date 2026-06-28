@@ -218,6 +218,23 @@ export default async function Page() {
         </Link>
       </div>
 
+      {/* Alerte prise AC injoignable (déconnectée du cloud Tuya) */}
+      {s.acSwitchOnline === false && (
+        <div className="relative overflow-hidden rounded-2xl ring-1 ring-rose-500/40 bg-rose-500/[0.08] p-4 sm:p-5 flex items-start gap-3">
+          <span className="shrink-0 text-rose-300 mt-0.5">{PlugIcon}</span>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-rose-300">
+              Prise AC batterie injoignable
+            </div>
+            <div className="text-xs sm:text-sm text-zinc-400 mt-0.5">
+              Déconnectée du cloud Tuya : les commandes de charge ne sont pas
+              appliquées (la batterie ne se charge pas). Redémarre la prise
+              (débranche 10 s) ou vérifie son Wi-Fi.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPIs principaux */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Tile
@@ -279,8 +296,17 @@ export default async function Page() {
         />
         <Tile
           label="Prise AC batterie"
-          value={s.switchOn === null ? "—" : s.switchOn ? "ON" : "OFF"}
-          tone={s.switchOn ? "good" : "default"}
+          value={
+            s.acSwitchOnline === false
+              ? "Injoignable"
+              : s.switchOn === null
+                ? "—"
+                : s.switchOn
+                  ? "ON"
+                  : "OFF"
+          }
+          hint={s.acSwitchOnline === false ? "déconnectée du cloud Tuya" : undefined}
+          tone={s.acSwitchOnline === false ? "bad" : s.switchOn ? "good" : "default"}
           icon={SwitchIcon}
         />
         <Tile

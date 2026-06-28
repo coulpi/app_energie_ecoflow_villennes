@@ -55,6 +55,41 @@ export async function pollTuyaOnce(): Promise<void> {
             raw: status as unknown as object,
           },
         });
+
+        // Pour les prises pilotables (TUYA_SWITCH), on vérifie en plus la
+        // connexion cloud Tuya : le /status ci-dessus renvoie un état figé
+        // en cache même hors-ligne, donc une prise déconnectée passerait
+        // inaperçue alors que toutes nos commandes ON/OFF tombent dans le
+        // vide (résultat `false`). On persiste `online` pour l'exposer dans
+        // l'UI, et on loggue les transitions.
+        if (d.type === "TUYA_SWITCH") {
+          try {
+            const online = await c.isOnline(d.externalId);
+            const prevOnline = (d as { online?: boolean | null }).online ?? null;
+            if (prevOnline !== online) {
+              if (online) {
+                log.info("tuya: prise de retour en ligne", {
+                  deviceId: d.id,
+                  name: d.name,
+                });
+              } else {
+                log.warn("tuya: prise HORS LIGNE (commandes non délivrées)", {
+                  deviceId: d.id,
+                  name: d.name,
+                });
+              }
+            }
+            await prisma.device.update({
+              where: { id: d.id },
+              data: { online, onlineAt: new Date() } as never,
+            });
+          } catch (e) {
+            log.warn("tuya online check failed", {
+              deviceId: d.id,
+              error: (e as Error).message,
+            });
+          }
+        }
       } catch (e) {
         log.warn("tuya poll device failed", {
           deviceId: d.id,

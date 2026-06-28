@@ -576,6 +576,17 @@ Rôles enum Prisma : `PRODUCTION_METER`, `CONSUMPTION_METER`, `GRID_METER`,
 Types enum Prisma : `TUYA_METER`, `TUYA_SWITCH`, `ECOFLOW_BATTERY`,
 `SHELLY_METER`, `APSYSTEMS_INVERTER`.
 
+Champs `Device.online` / `onlineAt` : connexion **cloud Tuya** des devices
+`TUYA_*`. Le poller (`apps/worker/src/pollers/tuya.ts`) appelle
+`isOnline()` (endpoint `/v1.0/iot-03/devices/{id}`) pour les `TUYA_SWITCH`
+à chaque tick. **Important** : `getDeviceStatus` (`/status`) renvoie le
+dernier état **en cache** même quand le boîtier est hors-ligne — une prise
+déconnectée passe donc inaperçue (lectures figées, `switchOn`/`powerW`
+gelés) alors que **toutes les commandes ON/OFF échouent** (Tuya renvoie
+`result:false`, désormais loggé en warn dans `actions.ts` et non plus
+ignoré). `acSwitchOnline` est exposé par le snapshot ; le dashboard affiche
+un bandeau + une tuile « Injoignable » quand `online === false`.
+
 `ControlState` (key=`default`) — champs clés ajoutés :
 
 - Charge : `chargeMinW` (400), `chargeMaxW` (800), `chargeOffsetW` (100),

@@ -143,6 +143,27 @@ export class TuyaClient {
     );
   }
 
+  /**
+   * Détail du device (dont `online`). Le endpoint `/status` renvoie le
+   * dernier état **en cache** même quand le boîtier est déconnecté du cloud
+   * Tuya ; seul `online` (issu de `/devices/{id}`) dit si les commandes
+   * peuvent réellement être délivrées.
+   */
+  async getDeviceInfo(
+    deviceId: string,
+  ): Promise<{ online: boolean; name?: string; [k: string]: unknown }> {
+    return this.signedRequest<{ online: boolean; name?: string }>(
+      "GET",
+      `/v1.0/iot-03/devices/${deviceId}`,
+    );
+  }
+
+  /** Raccourci : true/false selon la connexion cloud du device. */
+  async isOnline(deviceId: string): Promise<boolean> {
+    const info = await this.getDeviceInfo(deviceId);
+    return info.online === true;
+  }
+
   async sendCommands(
     deviceId: string,
     commands: TuyaCommand[],
