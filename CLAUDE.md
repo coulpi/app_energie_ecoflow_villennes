@@ -688,3 +688,7 @@ Agent : `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `AGENT_INTERVAL_MINUTES`,
 `AGENT_ENABLED`. Maison : `HOME_LAT/LON/TZ`.
 Rétention : `RAW_RETENTION_DAYS` (30), `HOURLY_RETENTION_DAYS` (365).
 Sécurité batterie : `BATTERY_CRITICAL_SOC` (5).
+
+## Conformité AI Act
+
+Si cette application met en œuvre de l'IA (LLM, ML, agent, appel à un modèle tiers), réaliser un audit de conformité au **Règlement (UE) 2024/1689** (AI Act) via le skill `ai-act-conformite` : classification de risque (interdit / high-risk / transparence Art. 50 / minimal), audit des obligations applicables, plan d'action priorisé. Consigner le rapport sous `docs/conformite/ai-act-audit-<date>.md`. Refaire l'audit à chaque évolution touchant la fonction IA. Échéance transparence Art. 50 : **2 août 2026**. Ceci est une aide à la conformité, pas un avis juridique.
