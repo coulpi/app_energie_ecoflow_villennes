@@ -135,6 +135,13 @@ const GearIcon = (
   </svg>
 );
 
+const PoolIcon = (
+  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+    <path d="M3 17c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0M3 21c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0" strokeLinecap="round" />
+    <path d="M8 14V5a2 2 0 0 1 4 0M16 14V5a2 2 0 0 0-4 0M8 9h8" strokeLinecap="round" />
+  </svg>
+);
+
 export default async function Page() {
   const s = await getDashboardSnapshot();
   const surplusTone: Tone =
@@ -316,6 +323,29 @@ export default async function Page() {
           icon={GearIcon}
         />
       </div>
+
+      {/* Réseau indépendant piscine + jacuzzi (hors bilan maison) */}
+      {(s.auxNetworkName !== null || s.auxNetworkW !== null) && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <Tile
+            label={s.auxNetworkName ?? "Réseau piscine / jacuzzi"}
+            value={fmtW(s.auxNetworkW)}
+            hint={
+              s.auxNetworkW === null
+                ? "pas de mesure récente"
+                : "réseau indépendant · hors bilan maison"
+            }
+            tone={
+              s.auxNetworkW === null
+                ? "default"
+                : s.auxNetworkW > 30
+                  ? "warn"
+                  : "default"
+            }
+            icon={PoolIcon}
+          />
+        </div>
+      )}
 
       {/* Forçage manuel de la recharge batterie */}
       <ForceChargeCard />

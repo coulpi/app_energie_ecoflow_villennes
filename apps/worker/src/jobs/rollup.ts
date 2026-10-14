@@ -45,7 +45,11 @@ export async function runRollupOnce(now = new Date()): Promise<void> {
       // Les prises mesurant un appareil specifique (jacuzzi, voiture,
       // etc.) sont aussi des consommateurs : on remplit consoWh pour
       // qu'elles apparaissent dans l'historique par equipement.
-      else if (d.role === "APPLIANCE" || d.role === "BATTERY_AC_SWITCH")
+      else if (
+        d.role === "APPLIANCE" ||
+        d.role === "BATTERY_AC_SWITCH" ||
+        d.role === "AUX_NETWORK_METER"
+      )
         consoWh = Math.max(0, e);
     }
 

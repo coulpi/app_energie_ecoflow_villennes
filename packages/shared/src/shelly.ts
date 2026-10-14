@@ -5,6 +5,66 @@
 //   - Gen2/Gen3 (Plus 1PM, Pro EM, etc.) → GET /rpc/Shelly.GetStatus
 //
 // L'`externalId` du Device est l'URL ou l'IP : `http://192.168.1.42`.
+// Suffixe `#<n>` optionnel pour cibler un canal d'un Shelly multi-pinces
+// (`http://192.168.1.42#1`) : permet de déclarer 2 Devices sur le même
+// boîtier malgré l'unicité de `externalId` (ex. pince 0 = réseau maison,
+// pince 1 = réseau piscine/jacuzzi).
+
+/**
+ * Découpe un `externalId` Shelly en URL de base + canal éventuel
+ * (`#<n>`). Ajoute `http://` si on a juste une IP.
+ */
+export function parseShellyExternalId(externalId: string): {
+  baseUrl: string;
+  channel: number | null;
+} {
+  const raw = externalId.trim();
+  const hashIdx = raw.indexOf("#");
+  const base = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+  const frag = hashIdx >= 0 ? raw.slice(hashIdx + 1) : "";
+  const ch = /^\d+$/.test(frag) ? Number(frag) : null;
+  const withScheme = /^https?:\/\//.test(base) ? base : `http://${base}`;
+  return { baseUrl: withScheme.replace(/\/+$/, ""), channel: ch };
+}
+
+export interface ShellyChannelPower {
+  channel: number;
+  key: string;
+  powerW: number;
+}
+
+/**
+ * Liste la puissance de chaque canal (pince / relais) d'un statut Shelly
+ * brut (Gen1 ou Gen2). Sert au bouton « Tester » pour identifier quelle
+ * pince mesure quel circuit.
+ */
+export function listShellyChannels(raw: unknown): ShellyChannelPower[] {
+  if (!raw || typeof raw !== "object") return [];
+  const s = raw as Record<string, unknown>;
+  const out: ShellyChannelPower[] = [];
+  for (const [k, v] of Object.entries(s)) {
+    if (!v || typeof v !== "object") continue;
+    if (!/^(switch|pm1|em1|em|emeter):\d+$/.test(k)) continue;
+    const o = v as Record<string, unknown>;
+    const p =
+      (typeof o.apower === "number" && o.apower) ||
+      (typeof o.act_power === "number" && o.act_power) ||
+      (typeof o.power === "number" && o.power) ||
+      0;
+    out.push({ channel: Number(k.split(":")[1]), key: k, powerW: p });
+  }
+  for (const key of ["meters", "emeters", "relays"]) {
+    if (out.length > 0) break;
+    const arr = s[key];
+    if (!Array.isArray(arr)) continue;
+    arr.forEach((m: Record<string, unknown>, i) => {
+      if (typeof m?.power === "number") {
+        out.push({ channel: i, key: `${key}[${i}]`, powerW: m.power });
+      }
+    });
+  }
+  return out.sort((a, b) => a.channel - b.channel);
+}
 
 export interface ShellyReading {
   powerW: number | null;

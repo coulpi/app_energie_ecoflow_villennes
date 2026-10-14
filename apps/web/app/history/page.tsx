@@ -55,7 +55,10 @@ export default async function HistoryPage() {
       socCount: 0,
     };
     if (r.prodWh) slot.prod += r.prodWh;
-    if (r.consoWh) slot.conso += r.consoWh;
+    // Le réseau piscine/jacuzzi est indépendant : il a sa propre courbe
+    // (conso par équipement) et ne gonfle pas la conso maison.
+    if (r.consoWh && r.device.role !== "AUX_NETWORK_METER")
+      slot.conso += r.consoWh;
     if (r.minSoc !== null && r.maxSoc !== null) {
       slot.socSum += (r.minSoc + r.maxSoc) / 2;
       slot.socCount += 1;
@@ -80,13 +83,16 @@ export default async function HistoryPage() {
   // ── Conso par équipement (7 jours) ─────────────────────────────────
   // Sources combinées :
   //  (a) ReadingHourly des devices APPLIANCE / BATTERY_AC_SWITCH (mesure
-  //      directe — jacuzzi, voiture, prise charge batterie…).
+  //      directe — jacuzzi, voiture, prise charge batterie, réseau
+  //      piscine/jacuzzi…).
   //  (b) LoadProfile sans device lié (PAC) : énergie estimée depuis les
   //      LoadEvent (durée × puissance moyenne du cycle).
   const measuredDevices = await prisma.device.findMany({
     where: {
       enabled: true,
-      role: { in: ["APPLIANCE", "BATTERY_AC_SWITCH"] as never },
+      role: {
+        in: ["APPLIANCE", "BATTERY_AC_SWITCH", "AUX_NETWORK_METER"] as never,
+      },
     },
     orderBy: { name: "asc" },
   });

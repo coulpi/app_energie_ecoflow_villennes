@@ -22,6 +22,13 @@ export default function TestDeviceButton({ deviceId }: { deviceId: string }) {
         if (typeof j.switchOn === "boolean") parts.push(j.switchOn ? "ON" : "OFF");
         if (typeof j.energyWh === "number") parts.push(`${Math.round(j.energyWh)} Wh`);
         if (typeof j.soc === "number") parts.push(`SoC ${j.soc}%`);
+        if (Array.isArray(j.channels) && j.channels.length > 1) {
+          const list = (j.channels as Array<{ channel: number; powerW: number }>)
+            .map((c) => `canal ${c.channel} : ${Math.round(c.powerW)} W`)
+            .join(", ");
+          const sel = typeof j.channel === "number" ? `canal ${j.channel}` : "somme";
+          parts.push(`[${sel}] — ${list}`);
+        }
         setState({
           loading: false,
           result: parts.length > 0 ? parts.join(" · ") : "OK (pas de mesure)",

@@ -17,10 +17,13 @@ export async function pollShellyOnce(): Promise<void> {
             invertSign?: boolean;
             channel?: number | null;
           } | null) ?? null;
+        // Canal : vendorMeta.channel prioritaire, sinon suffixe `#<n>` de
+        // l'externalId. null = somme de tous les canaux.
+        const parsed = shellyNs.parseShellyExternalId(d.externalId);
         const channel =
-          typeof meta?.channel === "number" ? meta.channel : null;
+          typeof meta?.channel === "number" ? meta.channel : parsed.channel;
         const reading = await shellyNs.fetchShellyStatus(
-          d.externalId,
+          parsed.baseUrl,
           undefined,
           channel,
         );

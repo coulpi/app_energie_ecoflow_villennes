@@ -121,6 +121,14 @@ export interface DashboardSnapshot {
   acSwitchPowerW: number | null;
   /** Connexion cloud Tuya de la prise AC : false = commandes non délivrées. */
   acSwitchOnline: boolean | null;
+  /**
+   * Réseau indépendant piscine + jacuzzi (pince Shelly dédiée, rôle
+   * AUX_NETWORK_METER). Mesuré à part : n'entre PAS dans le bilan maison
+   * (production / conso / grid / surplus). null = pas de compteur ou
+   * mesure > 5 min.
+   */
+  auxNetworkW: number | null;
+  auxNetworkName: string | null;
   controlMode: string;
   followLoadOffsetW: number | null;
   followLoadMinW: number | null;
@@ -175,6 +183,27 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     where: { enabled: true, role: "BATTERY_AC_SWITCH" as never },
     select: { online: true } as never,
   })) as { online?: boolean | null } | null;
+
+  // Réseau piscine/jacuzzi : somme des compteurs AUX_NETWORK_METER actifs
+  // (dernière mesure < 5 min). Volontairement hors bilan maison.
+  const auxDevices = await prisma.device.findMany({
+    where: { enabled: true, role: "AUX_NETWORK_METER" as never },
+    include: {
+      readings: {
+        where: { ts: { gte: since } },
+        orderBy: { ts: "desc" },
+        take: 1,
+      },
+    },
+  });
+  const auxPowers = auxDevices
+    .map((d) => d.readings[0]?.powerW)
+    .filter((p): p is number => typeof p === "number");
+  const auxNetworkW =
+    auxPowers.length > 0
+      ? Math.max(0, auxPowers.reduce((a, b) => a + b, 0))
+      : null;
+  const auxNetworkName = auxDevices[0]?.name ?? null;
 
   let productionW = prod?.powerW ?? null;
   // Plancher : sous 10 W, le panneau / Tuya remonte du bruit nocturne
@@ -341,6 +370,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     switchOn: sw?.switchOn ?? null,
     acSwitchPowerW: sw?.powerW ?? null,
     acSwitchOnline: swDevice?.online ?? null,
+    auxNetworkW,
+    auxNetworkName,
     controlMode: ctrl?.mode ?? "RULES",
     followLoadOffsetW: ctrl?.followLoadOffsetW ?? null,
     followLoadMinW: ctrl?.followLoadMinW ?? null,

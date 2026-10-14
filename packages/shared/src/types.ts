@@ -14,6 +14,10 @@ export const DeviceRoleSchema = z.enum([
   "GRID_METER",
   "BATTERY_AC_SWITCH",
   "BATTERY",
+  "POWERSTREAM",
+  "SOLAR_INVERTER",
+  "APPLIANCE",
+  "AUX_NETWORK_METER",
 ]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
 

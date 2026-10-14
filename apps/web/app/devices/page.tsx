@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import TestDeviceButton from "./TestDeviceButton";
@@ -13,7 +14,27 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "BATTERY", label: "Batterie" },
   { value: "SOLAR_INVERTER", label: "Onduleur solaire (par panneau)" },
   { value: "APPLIANCE", label: "Appareil mesuré (jacuzzi, voiture…)" },
+  { value: "AUX_NETWORK_METER", label: "Réseau indépendant (piscine + jacuzzi)" },
 ];
+
+/**
+ * Construit `vendorMeta` depuis le formulaire en conservant les clés non
+ * éditées ici (invertSign, etc.). `channel` = canal Shelly (pince), vide =
+ * somme de tous les canaux.
+ */
+function buildVendorMeta(
+  formData: FormData,
+  previous: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const meta: Record<string, unknown> = { ...(previous ?? {}) };
+  const model = String(formData.get("model") ?? "").trim();
+  if (model) meta.model = model;
+  else delete meta.model;
+  const channelRaw = String(formData.get("channel") ?? "").trim();
+  if (/^\d+$/.test(channelRaw)) meta.channel = Number(channelRaw);
+  else delete meta.channel;
+  return Object.keys(meta).length > 0 ? meta : null;
+}
 
 const TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "TUYA_METER", label: "Tuya — compteur" },
@@ -31,9 +52,7 @@ async function createDevice(formData: FormData) {
       role: String(formData.get("role")) as never,
       externalId: String(formData.get("externalId")),
       name: String(formData.get("name")),
-      vendorMeta: formData.get("model")
-        ? { model: String(formData.get("model")) }
-        : undefined,
+      vendorMeta: (buildVendorMeta(formData, null) ?? undefined) as never,
       capabilities: formData.get("switchCode")
         ? { switchCode: String(formData.get("switchCode")) }
         : undefined,
@@ -62,7 +81,14 @@ async function deleteDevice(id: string) {
 async function updateDevice(id: string, formData: FormData) {
   "use server";
   const switchCode = String(formData.get("switchCode") ?? "").trim();
-  const model = String(formData.get("model") ?? "").trim();
+  const prev = await prisma.device.findUnique({
+    where: { id },
+    select: { vendorMeta: true },
+  });
+  const vendorMeta = buildVendorMeta(
+    formData,
+    (prev?.vendorMeta as Record<string, unknown> | null) ?? null,
+  );
   await prisma.device.update({
     where: { id },
     data: {
@@ -70,11 +96,29 @@ async function updateDevice(id: string, formData: FormData) {
       type: (String(formData.get("type") ?? "") || undefined) as never,
       role: (String(formData.get("role") ?? "") || undefined) as never,
       externalId: String(formData.get("externalId") ?? "").trim() || undefined,
-      vendorMeta: model ? { model } : null,
+      vendorMeta: (vendorMeta ?? Prisma.JsonNull) as never,
       capabilities: switchCode ? { switchCode } : null,
     },
   });
   revalidatePath("/devices");
+}
+
+/** Hôte Shelly sans schéma ni suffixe `#canal` (pour détecter un boîtier partagé). */
+function shellyHostOf(externalId: string): string {
+  return externalId
+    .trim()
+    .replace(/#.*$/, "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+/** Canal effectif (vendorMeta.channel prioritaire, sinon suffixe `#n`). */
+function shellyChannelOf(d: { externalId: string; vendorMeta: unknown }): number | null {
+  const meta = d.vendorMeta as { channel?: unknown } | null;
+  if (typeof meta?.channel === "number") return meta.channel;
+  const m = /#(\d+)$/.exec(d.externalId.trim());
+  return m ? Number(m[1]) : null;
 }
 
 export default async function DevicesPage() {
@@ -155,7 +199,13 @@ export default async function DevicesPage() {
           <input
             name="switchCode"
             placeholder="Code switch Tuya (default: switch_1)"
-            className="input-base sm:col-span-2"
+            className="input-base"
+          />
+          <input
+            name="channel"
+            inputMode="numeric"
+            placeholder="Canal Shelly (vide = tous)"
+            className="input-base"
           />
           <button className="btn-primary">Ajouter</button>
         </div>
@@ -167,7 +217,17 @@ export default async function DevicesPage() {
         )}
         {devices.map((d) => {
           const last = lastReadings.get(d.id);
-          const meta = (d.vendorMeta as { model?: string } | null) ?? null;
+          const meta =
+            (d.vendorMeta as { model?: string; channel?: number } | null) ?? null;
+          const sharedShellyNoChannel =
+            d.type === "SHELLY_METER" &&
+            shellyChannelOf(d) === null &&
+            devices.some(
+              (o) =>
+                o.id !== d.id &&
+                o.type === "SHELLY_METER" &&
+                shellyHostOf(o.externalId) === shellyHostOf(d.externalId),
+            );
           const caps = (d.capabilities as { switchCode?: string } | null) ?? null;
           return (
             <div key={d.id} className="card space-y-2">
@@ -186,6 +246,21 @@ export default async function DevicesPage() {
                     <div className="text-xs text-zinc-500 font-mono truncate">
                       {d.type} · {d.role} · {d.externalId}
                     </div>
+                    {d.type === "SHELLY_METER" && (
+                      <div className="text-[11px] text-zinc-500 mt-0.5">
+                        Canal :{" "}
+                        {shellyChannelOf(d) === null
+                          ? "tous (somme)"
+                          : shellyChannelOf(d)}
+                      </div>
+                    )}
+                    {sharedShellyNoChannel && (
+                      <div className="text-[11px] text-amber-400 mt-0.5">
+                        ⚠ Ce Shelly est partagé avec un autre équipement mais
+                        aucun canal n&rsquo;est fixé : la mesure additionne
+                        toutes les pinces. Renseigne le canal (Éditer).
+                      </div>
+                    )}
                     {last && (
                       <div className="text-[11px] text-zinc-500 mt-0.5">
                         Dernière mesure : {new Date(last.ts).toLocaleString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -254,7 +329,16 @@ export default async function DevicesPage() {
                     name="switchCode"
                     defaultValue={caps?.switchCode ?? ""}
                     placeholder="Code switch Tuya"
-                    className="input-base sm:col-span-2"
+                    className="input-base"
+                  />
+                  <input
+                    name="channel"
+                    inputMode="numeric"
+                    defaultValue={
+                      typeof meta?.channel === "number" ? String(meta.channel) : ""
+                    }
+                    placeholder="Canal Shelly (vide = tous)"
+                    className="input-base"
                   />
                   <button className="btn-primary text-xs">Enregistrer</button>
                 </form>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { tuya as tuyaNs } from "@app/shared";
+import { shelly as shellyNs, tuya as tuyaNs } from "@app/shared";
 import { prisma } from "@/lib/prisma";
 
 const { TuyaClient } = tuyaNs;
@@ -68,25 +68,34 @@ export async function POST(
 
   if (device.type === "SHELLY_METER") {
     try {
-      const url = device.externalId.startsWith("http")
-        ? device.externalId
-        : `http://${device.externalId}/rpc/Shelly.GetStatus`;
-      const r = await fetch(url, {
-        signal: AbortSignal.timeout(5000),
+      const parsed = shellyNs.parseShellyExternalId(device.externalId);
+      const meta =
+        (device.vendorMeta as { channel?: number | null; invertSign?: boolean } | null) ??
+        null;
+      const channel =
+        typeof meta?.channel === "number" ? meta.channel : parsed.channel;
+      const reading = await shellyNs.fetchShellyStatus(
+        parsed.baseUrl,
+        undefined,
+        channel,
+      );
+      const powerW =
+        reading.powerW === null
+          ? null
+          : meta?.invertSign === true
+            ? -reading.powerW
+            : reading.powerW;
+      // Puissance de chaque pince : permet d'identifier quel canal mesure
+      // quel circuit (ex. réseau maison vs réseau piscine/jacuzzi).
+      const channels = shellyNs.listShellyChannels(reading.raw);
+      return NextResponse.json({
+        ok: true,
+        powerW,
+        energyWh: reading.energyWh,
+        channel,
+        channels,
+        raw: reading.raw,
       });
-      if (!r.ok) {
-        return NextResponse.json(
-          { error: `HTTP ${r.status}` },
-          { status: 502 },
-        );
-      }
-      const j = (await r.json()) as Record<string, unknown>;
-      // EM:0.act_power (3-em) ou switch:0.apower (plug-s)
-      const em = j["em:0"] as { act_power?: number } | undefined;
-      const sw = j["switch:0"] as { apower?: number; output?: boolean } | undefined;
-      const powerW = em?.act_power ?? sw?.apower ?? null;
-      const switchOn = sw?.output ?? null;
-      return NextResponse.json({ ok: true, powerW, switchOn, raw: j });
     } catch (e) {
       return NextResponse.json(
         { error: (e as Error).message },

@@ -272,6 +272,37 @@ Wi-Fi du jacuzzi, à figer en DHCP réservé sur le routeur), (2) écrire
 la boucle `jacuzzi-control.ts`, (3) ajouter les champs `ControlState`
 au schema Prisma, (4) UI minimale + endpoint `/api/jacuzzi/state`.
 
+## Réseau indépendant piscine + jacuzzi (`AUX_NETWORK_METER`)
+
+Piscine et jacuzzi sont sur un **réseau électrique séparé**, mesuré par
+**une pince dédiée du Shelly** (l'autre pince reste le compteur réseau
+maison). Les deux réseaux sont suivis **séparément** :
+
+- Rôle Prisma `AUX_NETWORK_METER` (« Réseau indépendant (piscine +
+  jacuzzi) » dans `/devices`). Aucun calcul maison ne le lit (snapshot,
+  follow-load, moteur de règles, agent, loads filtrent tous par rôle) →
+  **hors bilan** production / conso / grid / surplus.
+- Snapshot : `auxNetworkW` (somme des compteurs AUX actifs, mesure < 5 min)
+  + `auxNetworkName`. Tuile dédiée sur le dashboard `/`.
+- Rollup : `consoWh` rempli (comme `APPLIANCE`) → visible dans « Conso
+  par équipement » de `/history`, mais **exclu de la courbe conso maison**.
+
+### Shelly multi-pinces : 1 Device par canal
+
+- Canal sélectionné par `vendorMeta.channel` (champ « Canal Shelly » dans
+  `/devices`) ou par suffixe `#<n>` sur l'`externalId`
+  (`http://192.168.0.x#1`) — le suffixe permet 2 Devices sur le même
+  boîtier malgré `externalId @unique`. `vendorMeta.channel` prioritaire.
+  Parsing : `parseShellyExternalId` (`packages/shared/src/shelly.ts`).
+- **Piège** : sans canal, `fetchShellyStatus` **additionne toutes les
+  pinces**. Le compteur `GRID_METER` doit donc avoir son canal fixé dès
+  qu'une 2ᵉ pince est branchée, sinon la conso piscine/jacuzzi pollue
+  l'import réseau. `/devices` affiche un avertissement dans ce cas.
+- Bouton « Tester » d'un Shelly : liste la puissance de chaque canal
+  (`listShellyChannels`) pour identifier quelle pince mesure quel circuit.
+- `updateDevice` fusionne `vendorMeta` (ne réécrit plus `{model}` seul, ce
+  qui effaçait `channel` / `invertSign`).
+
 ## Détection live d'appareils (`/api/loads/live`)
 
 Comparaison conso bilanée actuelle (`prod + grid`, **sans PS** car la
@@ -571,7 +602,8 @@ LED bleue continue (mode AP captif). Récupération :
 ## Schéma BD `Device`
 
 Rôles enum Prisma : `PRODUCTION_METER`, `CONSUMPTION_METER`, `GRID_METER`,
-`BATTERY`, `BATTERY_AC_SWITCH`, `POWERSTREAM`, `SOLAR_INVERTER`.
+`BATTERY`, `BATTERY_AC_SWITCH`, `POWERSTREAM`, `SOLAR_INVERTER`,
+`APPLIANCE`, `AUX_NETWORK_METER`.
 
 Types enum Prisma : `TUYA_METER`, `TUYA_SWITCH`, `ECOFLOW_BATTERY`,
 `SHELLY_METER`, `APSYSTEMS_INVERTER`.
