@@ -675,6 +675,13 @@ réseau** si le surplus solaire ne suffit pas. Piloté depuis le dashboard
   à `max(cible, maxChargeSoc)`, puis le **restaure** à la fin (objectif
   atteint sans durée, durée écoulée, ou annulation). `endForceCharge` remet
   `forceChargeSoc/StartAt/EndAt = null` et `forceChargeCeilingHit = false`.
+- **PowerStream en stockage pendant la charge** : `psStorageDuringForce`
+  passe le PS en `priority=1` dès que la charge forcée tire (évite de
+  réinjecter vers la maison ce qu'on charge depuis le réseau piscine/
+  jacuzzi). `restorePsAfterForce` remet la priorité d'avant à la fin
+  (cible, durée, annulation, maintien au plafond) et remet
+  `lastInTempoWindow = null` pour que la fenêtre Tempo soit réappliquée au
+  tick suivant (forçage fini en pleine fenêtre → alimentation).
 
 ### Programme quotidien
 
