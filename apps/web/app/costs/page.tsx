@@ -101,8 +101,8 @@ export default async function CostsPage({
       <div>
         <h1 className="page-h1">Coûts d&rsquo;électricité</h1>
         <p className="page-sub mt-1">
-          Tarif EDF Tempo, réseau maison et réseau piscine/jacuzzi (compteurs
-          distincts). Du {fmtDate(report.from)} au {fmtDate(report.to)}.
+          Tarif EDF Tempo, réseau 1 (maison) et réseau 2 (piscine/jacuzzi), compteurs
+          distincts. Du {fmtDate(report.from)} au {fmtDate(report.to)}.
         </p>
       </div>
 
@@ -142,7 +142,7 @@ export default async function CostsPage({
         <SummaryCard
           label="Économies solaire + batterie"
           value={eur(report.savings.eur)}
-          hint={`${kwh(report.savings.kWh)} non achetés (maison)`}
+          hint={`${kwh(report.savings.kWh)} non achetés (réseau 1)`}
           good
         />
       </div>
@@ -162,9 +162,9 @@ export default async function CostsPage({
           <thead>
             <tr className="text-left text-xs text-zinc-500">
               <th className="py-1 pr-3 font-normal">Période</th>
-              <th className="py-1 pr-3 font-normal text-right">Maison</th>
+              <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>
               <th className="py-1 pr-3 font-normal text-right">€</th>
-              <th className="py-1 pr-3 font-normal text-right">Piscine/jacuzzi</th>
+              <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>
               <th className="py-1 font-normal text-right">€</th>
             </tr>
           </thead>
@@ -214,8 +214,8 @@ export default async function CostsPage({
             <thead>
               <tr className="text-left text-xs text-zinc-500">
                 <th className="py-1 pr-3 font-normal">Jour</th>
-                <th className="py-1 pr-3 font-normal text-right">Maison</th>
-                <th className="py-1 pr-3 font-normal text-right">Piscine/jacuzzi</th>
+                <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>
+                <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>
                 <th className="py-1 pr-3 font-normal text-right">Total</th>
                 <th className="py-1 font-normal text-right">Économies</th>
               </tr>
@@ -248,10 +248,10 @@ export default async function CostsPage({
 
       <p className="text-xs text-zinc-500">
         Calcul horaire à partir des agrégats (heure en cours non incluse).
-        Journée Tempo de 6h à 6h. Économies = conso maison mesurée non
+        Journée Tempo de 6h à 6h. Économies = conso du réseau 1 non
         achetée au réseau (solaire + décharge batterie), au tarif de
         l&rsquo;heure. La charge batterie est payée sur le réseau
-        piscine/jacuzzi (prise AC IN).
+        2 (prise AC IN).
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -324,7 +324,7 @@ function ContractForm({ contract: c }: { contract: Contract }) {
   return (
     <form action={updateContract.bind(null, c.network)} className="card space-y-3">
       <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-        Contrat Tempo · {c.network === "HOUSE" ? "réseau maison" : "réseau piscine/jacuzzi"}
+        Contrat Tempo · {c.network === "HOUSE" ? "réseau 1 (maison)" : "réseau 2 (piscine/jacuzzi)"}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <input name="name" defaultValue={c.name} className="input-base col-span-2" />

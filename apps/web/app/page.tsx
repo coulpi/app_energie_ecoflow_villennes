@@ -328,14 +328,14 @@ export default async function Page() {
       {(s.auxNetworkName !== null || s.auxNetworkW !== null) && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <Tile
-            label={s.auxNetworkName ?? "Réseau piscine / jacuzzi"}
+            label="Réseau 2 · piscine / jacuzzi"
             value={fmtW(s.auxNetworkW)}
             hint={
               s.auxNetworkW === null
                 ? "pas de mesure récente"
                 : s.acSwitchPowerW !== null && s.acSwitchPowerW > 30
                   ? `dont charge batterie ${Math.round(s.acSwitchPowerW)} W`
-                  : "réseau indépendant · hors bilan maison"
+                  : "compteur séparé · hors bilan réseau 1"
             }
             tone={
               s.auxNetworkW === null

@@ -227,8 +227,8 @@ saison précédente au démarrage.
   `GRID_METER`) et `AUX` (piscine + jacuzzi, `AUX_NETWORK_METER`).
 - Contrats en BD (`EnergyContract`, éditables sur `/costs`) : prix TTC du
   kWh couleur × HC/HP, plage HC (défaut 22h-6h), abonnement €/mois.
-  Créés au 1er accès avec la grille EDF du 1er août 2026 ; maison 9 kVA
-  (19,70 €/mois), piscine abonnement à 0 (inconnu, à saisir).
+  Créés au 1er accès avec la grille EDF du 1er août 2026 ; réseaux 1 et 2
+  identiques (9 kVA, 19,70 €/mois chacun).
 - Valorisation heure par heure sur `ReadingHourly` : `importWh`
   (rempli par le rollup pour les compteurs réseau ; avant son ajout,
   repli sur `max(0, avgPowerW)`), couleur via `tempoDateOf(heure − 6h)`,

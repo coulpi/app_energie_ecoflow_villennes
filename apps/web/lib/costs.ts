@@ -48,14 +48,13 @@ export interface Contract {
 }
 
 // Valeurs initiales : grille Tempo EDF TTC au 1er août 2026 (défauts du
-// schéma), maison 9 kVA. Le compteur piscine/jacuzzi a son propre contrat,
-// à compléter dans /costs (abonnement inconnu → 0).
+// schéma). Réseaux 1 et 2 : 2 compteurs, 2 contrats identiques (9 kVA).
 const DEFAULT_CONTRACTS: Record<
   Network,
   { name: string; kva: number | null; subscriptionMonthlyEur: number }
 > = {
-  HOUSE: { name: "Maison", kva: 9, subscriptionMonthlyEur: 19.7 },
-  AUX: { name: "Piscine + jacuzzi", kva: null, subscriptionMonthlyEur: 0 },
+  HOUSE: { name: "Réseau 1", kva: 9, subscriptionMonthlyEur: 19.7 },
+  AUX: { name: "Réseau 2", kva: 9, subscriptionMonthlyEur: 19.7 },
 };
 
 export async function getContracts(): Promise<Record<Network, Contract>> {

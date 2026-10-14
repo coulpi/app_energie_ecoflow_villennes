@@ -363,7 +363,7 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
                 <Legend color={C.battery} label="Batterie" />
                 <Legend color={C.grid} label="Réseau" />
                 <Legend color={C.importRed} label="Import" />
-                <Legend color={C.aux} label="Piscine / jacuzzi" />
+                <Legend color={C.aux} label="Réseau 2" />
               </div>
             </div>
 
@@ -2161,13 +2161,13 @@ function FlowDiagram({
       <Perimeter
         {...GEO.housePerimeter}
         stroke="rgba(255,255,255,0.18)"
-        label="Réseau maison"
+        label="Réseau 1 · maison"
         labelX={GEO.housePerimeter.x + 24}
       />
       <Perimeter
         {...GEO.auxPerimeter}
         stroke="oklch(80% 0.13 190 / 0.4)"
-        label="Réseau indépendant · piscine + jacuzzi"
+        label="Réseau 2 · piscine + jacuzzi"
         labelX={GEO.auxPerimeter.x + GEO.auxPerimeter.w - 24}
         labelAnchor="end"
       />
@@ -2264,7 +2264,7 @@ function FlowDiagram({
         label={gridFlow >= 0 ? "IMPORT" : "EXPORT"}
         value={Math.abs(gridFlow)}
         unit="W"
-        sub="RÉSEAU MAISON"
+        sub="RÉSEAU 1"
         icon="grid"
       />
       <Node
@@ -2277,7 +2277,7 @@ function FlowDiagram({
         label="IMPORT"
         value={auxTotal}
         unit="W"
-        sub="RÉSEAU PISCINE"
+        sub="RÉSEAU 2"
         icon="grid"
       />
       <Node
