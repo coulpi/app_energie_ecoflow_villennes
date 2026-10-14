@@ -48,13 +48,14 @@ export interface Contract {
 }
 
 // Valeurs initiales : grille Tempo EDF TTC au 1er août 2026 (défauts du
-// schéma). Réseaux 1 et 2 : 2 compteurs, 2 contrats identiques (9 kVA).
+// schéma). Réseaux 1 et 2 : mêmes prix (9 kVA) ; abonnement compté sur le
+// réseau 1 uniquement.
 const DEFAULT_CONTRACTS: Record<
   Network,
   { name: string; kva: number | null; subscriptionMonthlyEur: number }
 > = {
   HOUSE: { name: "Réseau 1", kva: 9, subscriptionMonthlyEur: 19.7 },
-  AUX: { name: "Réseau 2", kva: 9, subscriptionMonthlyEur: 19.7 },
+  AUX: { name: "Réseau 2", kva: 9, subscriptionMonthlyEur: 0 },
 };
 
 export async function getContracts(): Promise<Record<Network, Contract>> {

@@ -228,7 +228,8 @@ saison précédente au démarrage.
 - Contrats en BD (`EnergyContract`, éditables sur `/costs`) : prix TTC du
   kWh couleur × HC/HP, plage HC (défaut 22h-6h), abonnement €/mois.
   Créés au 1er accès avec la grille EDF du 1er août 2026 ; réseaux 1 et 2
-  identiques (9 kVA, 19,70 €/mois chacun).
+  aux mêmes prix (9 kVA) ; abonnement (19,70 €/mois) compté sur le réseau 1
+  seulement (réseau 2 à 0 à la demande de l'utilisateur).
 - Valorisation heure par heure sur `ReadingHourly` : `importWh`
   (rempli par le rollup pour les compteurs réseau ; avant son ajout,
   repli sur `max(0, avgPowerW)`), couleur via `tempoDateOf(heure − 6h)`,
