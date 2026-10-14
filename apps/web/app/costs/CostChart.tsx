@@ -122,7 +122,7 @@ export default function CostChart({
               cursor={{ fill: "rgba(255,255,255,0.04)" }}
               content={<TooltipContent showSub={showSub} />}
             />
-            <Bar dataKey="r1" stackId="c" fill={COLORS.r1} stroke={SURFACE} strokeWidth={1} maxBarSize={36} />
+            <Bar dataKey="r1" stackId="c" fill={COLORS.r1} stroke={SURFACE} strokeWidth={1} maxBarSize={36} isAnimationActive={false} />
             <Bar
               dataKey="r2"
               stackId="c"
@@ -130,6 +130,7 @@ export default function CostChart({
               stroke={SURFACE}
               strokeWidth={1}
               maxBarSize={36}
+              isAnimationActive={false}
               radius={showSub ? 0 : [4, 4, 0, 0]}
             />
             {showSub && (
@@ -140,6 +141,7 @@ export default function CostChart({
                 stroke={SURFACE}
                 strokeWidth={1}
                 maxBarSize={36}
+              isAnimationActive={false}
                 radius={[4, 4, 0, 0]}
               />
             )}
@@ -149,6 +151,7 @@ export default function CostChart({
               stroke={COLORS.savings}
               strokeWidth={2}
               dot={false}
+              isAnimationActive={false}
               activeDot={{ r: 4, stroke: SURFACE, strokeWidth: 2 }}
             />
           </ComposedChart>
