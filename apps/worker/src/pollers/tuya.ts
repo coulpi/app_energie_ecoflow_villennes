@@ -35,13 +35,56 @@ export async function pollTuyaOnce(): Promise<void> {
     devices.map(async (d) => {
       try {
         const status = await c.getDeviceStatus(d.externalId);
+
+        // Connexion cloud Tuya : le /status ci-dessus renvoie un état figé
+        // en cache même hors-ligne. Une prise déconnectée ne reçoit plus
+        // nos commandes ON/OFF (résultat `false`) ; un compteur déconnecté
+        // remonterait sa dernière puissance indéfiniment (vu : 336 W de
+        // production toute la nuit). On persiste `online` pour l'UI et on
+        // loggue les transitions.
+        let online: boolean | null = null;
+        try {
+          online = await c.isOnline(d.externalId);
+          const prevOnline = (d as { online?: boolean | null }).online ?? null;
+          if (prevOnline !== online) {
+            const what = d.type === "TUYA_SWITCH" ? "prise" : "compteur";
+            if (online) {
+              log.info(`tuya: ${what} de retour en ligne`, {
+                deviceId: d.id,
+                name: d.name,
+              });
+            } else {
+              log.warn(
+                d.type === "TUYA_SWITCH"
+                  ? "tuya: prise HORS LIGNE (commandes non délivrées)"
+                  : "tuya: compteur HORS LIGNE (mesure figée ignorée)",
+                { deviceId: d.id, name: d.name },
+              );
+            }
+          }
+          await prisma.device.update({
+            where: { id: d.id },
+            data: { online, onlineAt: new Date() } as never,
+          });
+        } catch (e) {
+          log.warn("tuya online check failed", {
+            deviceId: d.id,
+            error: (e as Error).message,
+          });
+        }
+
+        // Compteur hors ligne : la mesure en cache est figée, on enregistre
+        // une lecture vide (le snapshot retombe alors sur le bilan via la
+        // pince Shelly maison) plutôt qu'une valeur fantôme.
+        const stale = d.type === "TUYA_METER" && online === false;
+
         // GRID_METER : on conserve le signe (+ import / - export).
         const signed = d.role === "GRID_METER";
         const meta = (d.vendorMeta as { invertSign?: boolean } | null) ?? null;
         const invert = meta?.invertSign === true;
-        let powerW = TuyaClient.extractPowerW(status, signed);
+        let powerW = stale ? null : TuyaClient.extractPowerW(status, signed);
         if (powerW !== null && invert) powerW = -powerW;
-        const energyWh = TuyaClient.extractEnergyWh(status);
+        const energyWh = stale ? null : TuyaClient.extractEnergyWh(status);
         const switchOn =
           d.type === "TUYA_SWITCH" ? TuyaClient.extractSwitchOn(status) : null;
 
@@ -55,41 +98,6 @@ export async function pollTuyaOnce(): Promise<void> {
             raw: status as unknown as object,
           },
         });
-
-        // Pour les prises pilotables (TUYA_SWITCH), on vérifie en plus la
-        // connexion cloud Tuya : le /status ci-dessus renvoie un état figé
-        // en cache même hors-ligne, donc une prise déconnectée passerait
-        // inaperçue alors que toutes nos commandes ON/OFF tombent dans le
-        // vide (résultat `false`). On persiste `online` pour l'exposer dans
-        // l'UI, et on loggue les transitions.
-        if (d.type === "TUYA_SWITCH") {
-          try {
-            const online = await c.isOnline(d.externalId);
-            const prevOnline = (d as { online?: boolean | null }).online ?? null;
-            if (prevOnline !== online) {
-              if (online) {
-                log.info("tuya: prise de retour en ligne", {
-                  deviceId: d.id,
-                  name: d.name,
-                });
-              } else {
-                log.warn("tuya: prise HORS LIGNE (commandes non délivrées)", {
-                  deviceId: d.id,
-                  name: d.name,
-                });
-              }
-            }
-            await prisma.device.update({
-              where: { id: d.id },
-              data: { online, onlineAt: new Date() } as never,
-            });
-          } catch (e) {
-            log.warn("tuya online check failed", {
-              deviceId: d.id,
-              error: (e as Error).message,
-            });
-          }
-        }
       } catch (e) {
         log.warn("tuya poll device failed", {
           deviceId: d.id,

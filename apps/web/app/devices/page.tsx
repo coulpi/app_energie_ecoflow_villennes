@@ -261,7 +261,14 @@ export default async function DevicesPage() {
                     }
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{d.name}</div>
+                    <div className="font-medium truncate">
+                      {d.name}
+                      {(d as { online?: boolean | null }).online === false && (
+                        <span className="ml-2 text-[11px] font-normal text-red-400">
+                          ● hors ligne (cloud Tuya)
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-zinc-500 font-mono truncate">
                       {d.type} · {d.role} · {d.externalId}
                     </div>

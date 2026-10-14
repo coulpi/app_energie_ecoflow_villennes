@@ -617,8 +617,12 @@ Types enum Prisma : `TUYA_METER`, `TUYA_SWITCH`, `ECOFLOW_BATTERY`,
 
 Champs `Device.online` / `onlineAt` : connexion **cloud Tuya** des devices
 `TUYA_*`. Le poller (`apps/worker/src/pollers/tuya.ts`) appelle
-`isOnline()` (endpoint `/v1.0/iot-03/devices/{id}`) pour les `TUYA_SWITCH`
-à chaque tick. **Important** : `getDeviceStatus` (`/status`) renvoie le
+`isOnline()` (endpoint `/v1.0/iot-03/devices/{id}`) pour **tous** les
+devices Tuya (prises et compteurs) à chaque tick. Un `TUYA_METER` hors
+ligne est enregistré avec `powerW`/`energyWh` à `null` (sinon sa dernière
+puissance reste figée : vu 336 W de production toute une nuit) ; le
+snapshot retombe alors sur le bilan via la pince Shelly maison. `/devices`
+affiche « hors ligne » sur tout device `online === false`. **Important** : `getDeviceStatus` (`/status`) renvoie le
 dernier état **en cache** même quand le boîtier est hors-ligne — une prise
 déconnectée passe donc inaperçue (lectures figées, `switchOn`/`powerW`
 gelés) alors que **toutes les commandes ON/OFF échouent** (Tuya renvoie
