@@ -3,6 +3,9 @@
 // À chaque tick, le worker lit le bilan énergétique et décide :
 //   - Surplus suffisant + SoC < maxChargeSoc → prise AC ON, setChargeWatts
 //     calé sur (surplus − chargeOffsetW), borné [chargeMinW, chargeMaxW].
+//     Uniquement si `surplusChargeEnabled` (false par défaut : la prise AC IN
+//     est sur le réseau piscine/jacuzzi, la batterie ne charge alors qu'en
+//     forçage manuel ou quotidien).
 //   - Déficit + SoC > minDischargeSoc → prise AC OFF, setDischargeWatts
 //     calé sur (consommation − followLoadOffsetW), borné [followLoadMinW,
 //     followLoadMaxW].
@@ -13,6 +16,7 @@
 // significativement bougé (dead-band 25 W).
 
 import { prisma } from "../db.js";
+import { env } from "../env.js";
 import { log } from "../log.js";
 import { buildSnapshot } from "./engine.js";
 import { applyAction } from "./actions.js";
@@ -29,6 +33,10 @@ const CHARGE_RAMP_W_PER_TICK = 100;
 // via PowerStream pour valoriser le surplus au lieu de l'exporter.
 const FULL_BATTERY_GRACE_MS = 2 * 60_000;
 const FULL_BATTERY_PLUG_THRESHOLD_W = 30;
+// Programme quotidien : fenêtre après l'horaire pendant laquelle on accepte
+// de déclencher (tick manqué, redémarrage worker). Au-delà, on saute le jour
+// plutôt que de lancer une charge réseau à une heure inattendue.
+const DAILY_TRIGGER_WINDOW_MIN = 60;
 let deficitStartedAtMs: number | null = null;
 let lastOffAtMs: number | null = null;
 let switchOnAtMs: number | null = null;
@@ -308,6 +316,88 @@ async function tickForceCharge(
   await setCharge(watts);
 }
 
+/** Date (YYYY-MM-DD) et minutes depuis minuit dans le fuseau maison. */
+function localClock(now: Date): { date: string; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: env.HOME_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    minutes: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+}
+
+/**
+ * Programme quotidien de charge forcée. Si activé, qu'aucun forçage n'est
+ * en cours et qu'on est dans [horaire, horaire + 60 min) sans avoir déjà
+ * déclenché aujourd'hui → arme un forçage immédiat sans durée (s'arrête à
+ * la cible SoC). Mute `ctrl` pour que le dispatch qui suit le prenne en
+ * compte dès ce tick.
+ */
+async function maybeArmDailyForceCharge(ctrl: {
+  forceChargeSoc?: number | null;
+  forceChargeWatts?: number | null;
+  forceChargeStartAt?: Date | null;
+  forceChargeEndAt?: Date | null;
+  forceChargeDailyEnabled?: boolean | null;
+  forceChargeDailyTime?: string | null;
+  forceChargeDailySoc?: number | null;
+  forceChargeDailyWatts?: number | null;
+  forceChargeDailyLastDate?: string | null;
+}): Promise<void> {
+  if (!ctrl.forceChargeDailyEnabled) return;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(ctrl.forceChargeDailyTime ?? "");
+  if (!m) return;
+  const at = Number(m[1]) * 60 + Number(m[2]);
+  const { date, minutes } = localClock(new Date());
+  if (ctrl.forceChargeDailyLastDate === date) return;
+  const since = minutes - at;
+  if (since < 0 || since >= DAILY_TRIGGER_WINDOW_MIN) return;
+  // Un forçage manuel déjà actif garde la main : on marque quand même le
+  // jour pour ne pas l'écraser à la fin de ce forçage.
+  if (ctrl.forceChargeSoc != null) {
+    await prisma.controlState.update({
+      where: { key: "default" },
+      data: { forceChargeDailyLastDate: date } as never,
+    });
+    ctrl.forceChargeDailyLastDate = date;
+    log.info("force-charge quotidien: forçage déjà actif, jour sauté", { date });
+    return;
+  }
+  const soc = ctrl.forceChargeDailySoc ?? 90;
+  const watts = ctrl.forceChargeDailyWatts ?? 1000;
+  await prisma.controlState.update({
+    where: { key: "default" },
+    data: {
+      forceChargeSoc: soc,
+      forceChargeWatts: watts,
+      forceChargeStartAt: null,
+      forceChargeEndAt: null,
+      forceChargeDailyLastDate: date,
+    } as never,
+  });
+  Object.assign(ctrl, {
+    forceChargeSoc: soc,
+    forceChargeWatts: watts,
+    forceChargeStartAt: null,
+    forceChargeEndAt: null,
+    forceChargeDailyLastDate: date,
+  });
+  log.info("force-charge quotidien: déclenché", {
+    date,
+    time: ctrl.forceChargeDailyTime,
+    soc,
+    watts,
+  });
+}
+
 export async function tickFollowLoad(): Promise<void> {
   const ctrl = (await prisma.controlState.findUnique({
     where: { key: "default" },
@@ -335,9 +425,18 @@ export async function tickFollowLoad(): Promise<void> {
         forceChargeWatts?: number | null;
         forceChargeStartAt?: Date | null;
         forceChargeEndAt?: Date | null;
+        forceChargeDailyEnabled?: boolean | null;
+        forceChargeDailyTime?: string | null;
+        forceChargeDailySoc?: number | null;
+        forceChargeDailyWatts?: number | null;
+        forceChargeDailyLastDate?: string | null;
+        surplusChargeEnabled?: boolean | null;
       }
     | null;
   if (!ctrl) return;
+
+  // === Programme quotidien : arme le forçage à l'heure dite ===
+  await maybeArmDailyForceCharge(ctrl);
 
   // === Forçage manuel de charge : prioritaire sur tous les modes ===
   if (ctrl.forceChargeSoc != null) {
@@ -405,6 +504,10 @@ export async function tickFollowLoad(): Promise<void> {
     last.switchOn = m.switch_state;
   }
 
+  // Charge sur surplus solaire désactivée par défaut : la prise AC IN est
+  // sur le réseau indépendant, qui ne bénéficie pas du solaire maison.
+  // La batterie ne charge alors qu'en forçage (manuel ou quotidien).
+  const surplusChargeEnabled = ctrl.surplusChargeEnabled === true;
   const chargeMinW = ctrl.chargeMinW ?? 400;
   const chargeMaxW = ctrl.chargeMaxW ?? 800;
   const chargeOffsetW = ctrl.chargeOffsetW ?? 100;
@@ -500,7 +603,10 @@ export async function tickFollowLoad(): Promise<void> {
       const inWakeupWindow = distanceToEnd >= 0 && distanceToEnd <= wakeupBefore;
 
       const batteryAlreadyFull = soc !== null && soc >= ctrl.maxChargeSoc;
-      if (inWakeupWindow && !batteryAlreadyFull) {
+      // Le réveil ne sert qu'à charger sur surplus à l'aube. Sans charge
+      // surplus (prise AC IN sur le réseau piscine/jacuzzi), rallumer la
+      // prise ferait charger la batterie sur le réseau → on s'en passe.
+      if (inWakeupWindow && !batteryAlreadyFull && surplusChargeEnabled) {
         log.info("follow-load: tempo wakeup window — réveil batterie", {
           minutesUntilEnd: distanceToEnd,
         });
@@ -540,11 +646,14 @@ export async function tickFollowLoad(): Promise<void> {
   const offLockActive =
     lastOffAtMs !== null && now - lastOffAtMs < offToOnLockMs;
   const canStartCharge =
+    surplusChargeEnabled &&
     !offLockActive &&
     surplus >= switchOnTriggerW &&
     (soc === null || soc < ctrl.maxChargeSoc);
   const canKeepCharge =
-    alreadyCharging && (soc === null || soc < ctrl.maxChargeSoc);
+    surplusChargeEnabled &&
+    alreadyCharging &&
+    (soc === null || soc < ctrl.maxChargeSoc);
 
   // (2) DÉFICIT + capacité de fournir → DÉCHARGE
   const canDischarge =

@@ -161,8 +161,11 @@ Bilan énergétique forcé : `consumption = production + grid_signed + ps`
 - `ps` = `powerstreamPermanentW` UNIQUEMENT si `powerstreamPriority === 0`
   (mode alimentation). En mode stockage le PS n'injecte pas, on ne le
   compte pas dans le bilan.
-- La batterie étant branchée sur un circuit maison via la prise AC IN,
-  sa charge fait partie de la conso (elle apparaît au compteur).
+- La prise AC IN de la batterie est désormais sur le **réseau
+  indépendant piscine/jacuzzi** : sa charge n'apparaît plus au point de
+  livraison maison mais dans `auxNetworkW` (la tuile du dashboard affiche
+  « dont charge batterie »). La décharge, elle, reste côté maison via le
+  PowerStream.
 - On ne déduit pas la batterie du bilan : la conso reflète ce qui passe
   physiquement au point de livraison.
 
@@ -185,7 +188,11 @@ Auto-conso bidirectionnelle : à chaque tick (toutes les `POLL_INTERVAL_SECONDS`
      avant `endHour`, on rallume la prise Tuya AC IN pour sortir la
      batterie de veille profonde, prête à charger dès l'aube.
    - Hors fenêtre de réveil : prise OFF + charge à 0.
-3. **Charge sur surplus solaire** :
+3. **Charge sur surplus solaire** — seulement si
+   `ControlState.surplusChargeEnabled` (**false par défaut** : la prise AC
+   IN est sur le réseau piscine/jacuzzi qui ne voit pas le solaire maison ;
+   la batterie ne charge alors qu'en forçage manuel ou quotidien, et le
+   réveil Tempo est sauté pour ne pas rallumer la prise) :
    - Démarrage : surplus ≥ `chargeMinW + 50 W` (hystérésis), SoC < `maxChargeSoc`.
    - Cible : `clamp(surplus − chargeOffsetW, [chargeMinW, chargeMaxW])`.
    - **Rampe** : variation max ±100 W par tick (~+200 W/min).
@@ -668,6 +675,19 @@ réseau** si le surplus solaire ne suffit pas. Piloté depuis le dashboard
   à `max(cible, maxChargeSoc)`, puis le **restaure** à la fin (objectif
   atteint sans durée, durée écoulée, ou annulation). `endForceCharge` remet
   `forceChargeSoc/StartAt/EndAt = null` et `forceChargeCeilingHit = false`.
+
+### Programme quotidien
+
+`forceChargeDailyEnabled` / `forceChargeDailyTime` (HH:MM, fuseau
+`HOME_TZ`) / `forceChargeDailySoc` / `forceChargeDailyWatts`. En tête de
+`tickFollowLoad`, `maybeArmDailyForceCharge` arme un forçage **sans durée**
+(arrêt à la cible SoC) une fois par jour, si on est dans
+`[horaire, horaire + 60 min)` et `forceChargeDailyLastDate ≠ aujourd'hui`.
+Un forçage manuel déjà actif garde la main (le jour est marqué comme fait).
+Modifier l'horaire remet `forceChargeDailyLastDate` à null. Réglages via
+`POST /api/control/force-charge` `{daily: {enabled, time, soc, watts}}` ou
+`{surplusChargeEnabled}` (sans toucher au forçage en cours), UI en bas de
+`ForceChargeCard`.
 
 ## Accès & déploiement
 

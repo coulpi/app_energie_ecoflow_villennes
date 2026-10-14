@@ -353,6 +353,23 @@ model ControlState {
   //    Le forçage s'arrête au 1er des deux : cible SoC atteinte ou échéance.
   forceChargeStartAt DateTime?
   forceChargeEndAt   DateTime?
+  // Programme quotidien : chaque jour à forceChargeDailyTime (HH:MM, heure
+  // locale HOME_TZ), le worker arme un forçage forceChargeDailySoc /
+  // forceChargeDailyWatts (sans durée → s'arrête à la cible). Déclenche
+  // une seule fois par jour (forceChargeDailyLastDate = YYYY-MM-DD local),
+  // dans l'heure qui suit l'horaire (pas de rattrapage si le worker était
+  // arrêté plus longtemps).
+  forceChargeDailyEnabled  Boolean @default(false)
+  forceChargeDailyTime     String  @default("22:00")
+  forceChargeDailySoc      Int     @default(90)
+  forceChargeDailyWatts    Int     @default(1000)
+  forceChargeDailyLastDate String?
+  // Charge automatique sur surplus solaire en FOLLOW_LOAD. false depuis que
+  // la prise AC IN de la batterie est sur le réseau indépendant (piscine/
+  // jacuzzi) qui ne voit pas le solaire maison : la batterie ne charge
+  // qu'en forçage (programmé ou manuel) et décharge vers la maison via le
+  // PowerStream.
+  surplusChargeEnabled     Boolean @default(false)
   // === Jacuzzi Intex (chauffage piloté par surplus) ===
   // Si false : la boucle dort, l'utilisateur garde la main via l'app Intex.
   jacuzziEnabled         Boolean @default(false)

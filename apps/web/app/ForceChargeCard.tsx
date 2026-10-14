@@ -11,6 +11,154 @@ interface ForceChargeState {
   batterySoc: number | null;
   switchOn: boolean | null;
   batteryPowerW: number | null;
+  daily: {
+    enabled: boolean;
+    time: string;
+    soc: number;
+    watts: number;
+    lastDate: string | null;
+  };
+  surplusChargeEnabled: boolean;
+}
+
+/**
+ * Réglages persistants : programme quotidien (charge forcée chaque jour à
+ * l'heure dite jusqu'au SoC cible) + charge automatique sur surplus solaire.
+ */
+function ChargeSettings({
+  s,
+  onSaved,
+}: {
+  s: ForceChargeState;
+  onSaved: () => Promise<void>;
+}) {
+  const [enabled, setEnabled] = useState(s.daily.enabled);
+  const [time, setTime] = useState(s.daily.time);
+  const [soc, setSoc] = useState(String(s.daily.soc));
+  const [watts, setWatts] = useState(String(s.daily.watts));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    enabled !== s.daily.enabled ||
+    time !== s.daily.time ||
+    Number(soc) !== s.daily.soc ||
+    Number(watts) !== s.daily.watts;
+
+  async function save(payload: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/control/force-charge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) setError("Enregistrement refusé (heure invalide ?)");
+      await onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative mt-4 pt-4 border-t border-white/10 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-zinc-300">Tous les jours</span>
+        <button
+          type="button"
+          onClick={() => setEnabled(!enabled)}
+          className={`px-3 py-1 rounded text-xs transition ${
+            enabled
+              ? "bg-sky-700/80 text-white"
+              : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+          }`}
+        >
+          {enabled ? "Activé" : "Désactivé"}
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-[11px] text-zinc-400">Heure</span>
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            className="input-base"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-[11px] text-zinc-400">SoC cible %</span>
+          <input
+            type="number"
+            min={5}
+            max={100}
+            value={soc}
+            onChange={(e) => setSoc(e.target.value)}
+            className="input-base min-w-0"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-[11px] text-zinc-400">Puissance W</span>
+          <input
+            type="number"
+            min={100}
+            max={2000}
+            step={100}
+            value={watts}
+            onChange={(e) => setWatts(e.target.value)}
+            className="input-base min-w-0"
+          />
+        </label>
+      </div>
+      <p className="text-[11px] text-zinc-500">
+        {enabled
+          ? `Chaque jour à ${time}, charge à ${watts} W jusqu'à ${soc} %.`
+          : "Programme quotidien inactif."}
+        {s.daily.lastDate ? ` Dernier déclenchement : ${s.daily.lastDate}.` : ""}
+      </p>
+      {error && <p className="text-[11px] text-rose-400">{error}</p>}
+      <button
+        type="button"
+        onClick={() =>
+          save({
+            daily: {
+              enabled,
+              time,
+              soc: Number(soc),
+              watts: Number(watts),
+            },
+          })
+        }
+        disabled={busy || !dirty}
+        className="btn-ghost text-xs w-full justify-center"
+      >
+        Enregistrer le programme
+      </button>
+
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="min-w-0">
+          <div className="text-xs text-zinc-300">Charge sur surplus solaire</div>
+          <div className="text-[11px] text-zinc-500">
+            Désactivée : prise AC IN sur le réseau piscine/jacuzzi, la batterie
+            ne charge qu&rsquo;en forçage.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => save({ surplusChargeEnabled: !s.surplusChargeEnabled })}
+          disabled={busy}
+          className={`shrink-0 px-3 py-1 rounded text-xs transition ${
+            s.surplusChargeEnabled
+              ? "bg-emerald-700/80 text-white"
+              : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+          }`}
+        >
+          {s.surplusChargeEnabled ? "Activée" : "Désactivée"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // "HH:MM" (heure locale) → Date ISO future. Si l'heure est déjà passée
@@ -329,6 +477,8 @@ export default function ForceChargeCard() {
           </button>
         </div>
       )}
+
+      {s && <ChargeSettings s={s} onSaved={refresh} />}
     </div>
   );
 }

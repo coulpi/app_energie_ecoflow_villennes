@@ -333,7 +333,9 @@ export default async function Page() {
             hint={
               s.auxNetworkW === null
                 ? "pas de mesure récente"
-                : "réseau indépendant · hors bilan maison"
+                : s.acSwitchPowerW !== null && s.acSwitchPowerW > 30
+                  ? `dont charge batterie ${Math.round(s.acSwitchPowerW)} W`
+                  : "réseau indépendant · hors bilan maison"
             }
             tone={
               s.auxNetworkW === null
