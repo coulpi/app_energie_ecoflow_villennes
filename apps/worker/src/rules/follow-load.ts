@@ -50,6 +50,11 @@ let forceChargeCeilingHit = false;
 // Suit l'état précédent de la fenêtre tempo : on n'intervient sur la
 // priorité PowerStream que sur transition (in→out ou out→in).
 let lastInTempoWindow: boolean | null = null;
+// Forçage de charge : le PowerStream est passé en stockage (priority=1)
+// pendant la charge pour ne pas réinjecter vers la maison ce qu'on charge
+// depuis le réseau piscine/jacuzzi (double conversion à perte). On mémorise
+// la priorité d'avant pour la restaurer. null = rien à restaurer.
+let psForceSaved: { sn: string; priority: 0 | 1 } | null = null;
 
 export function getFollowLoadState(): {
   switchOn: boolean | null;
@@ -159,10 +164,53 @@ async function setDischarge(watts: number): Promise<void> {
  * atteint la cible OU quand on détecte que la batterie est réellement
  * pleine (prise ON > 2 min et tirage AC < 30 W).
  */
+/** Passe le PowerStream en stockage pendant la charge forcée (1×). */
+async function psStorageDuringForce(
+  sn: string | null | undefined,
+  currentPriority: number | null | undefined,
+): Promise<void> {
+  if (!sn || psForceSaved !== null) return;
+  const before: 0 | 1 =
+    last.powerstreamPriority ?? (currentPriority === 1 ? 1 : 0);
+  try {
+    await setPowerstreamPriority(sn, 1);
+    psForceSaved = { sn, priority: before };
+    log.info("force-charge: PowerStream en stockage pendant la charge", {
+      previousPriority: before,
+    });
+  } catch (e) {
+    log.warn("force-charge: PS stockage échoué", {
+      error: (e as Error).message,
+    });
+  }
+}
+
+/**
+ * Fin de charge (cible, durée, annulation, maintien au plafond) : restaure
+ * la priorité PowerStream d'avant le forçage. On réarme aussi la détection
+ * de transition Tempo pour que le tick suivant réapplique l'état de la
+ * fenêtre (ex. forçage terminé en pleine fenêtre de décharge → alimentation).
+ */
+async function restorePsAfterForce(): Promise<void> {
+  if (psForceSaved === null) return;
+  const { sn, priority } = psForceSaved;
+  try {
+    await setPowerstreamPriority(sn, priority);
+    log.info("force-charge: priorité PowerStream restaurée", { priority });
+  } catch (e) {
+    log.warn("force-charge: restauration priorité PS échouée", {
+      error: (e as Error).message,
+    });
+  }
+  psForceSaved = null;
+  lastInTempoWindow = null;
+}
+
 async function endForceCharge(maxChargeSoc: number): Promise<void> {
   await setCharge(0);
   await setSwitch(false);
   await setDischarge(0);
+  await restorePsAfterForce();
   if (forceMaxSocPushed) {
     try {
       await applyAction(
@@ -194,6 +242,7 @@ async function holdAtCeiling(): Promise<void> {
   await setCharge(0);
   await setSwitch(false);
   await setDischarge(0);
+  await restorePsAfterForce();
 }
 
 /**
@@ -208,6 +257,8 @@ async function tickForceCharge(
     forceChargeSoc?: number | null;
     forceChargeWatts?: number | null;
     maxChargeSoc: number;
+    powerstreamSn?: string | null;
+    powerstreamPriority?: number | null;
   },
   durationMode: boolean,
 ): Promise<void> {
@@ -310,7 +361,9 @@ async function tickForceCharge(
     }
   }
 
-  // Charge forcée : prise ON, charge à puissance fixe (réseau si besoin).
+  // Charge forcée : prise ON, charge à puissance fixe (réseau si besoin),
+  // PowerStream en stockage pour ne pas décharger en même temps.
+  await psStorageDuringForce(ctrl.powerstreamSn, ctrl.powerstreamPriority);
   await setDischarge(0);
   await setSwitch(true);
   await setCharge(watts);
@@ -419,6 +472,7 @@ export async function tickFollowLoad(): Promise<void> {
         tempoDischargeEndHour?: number | null;
         tempoWakeupBeforeMin?: number | null;
         powerstreamSn?: string | null;
+        powerstreamPriority?: number | null;
         minDischargeSoc: number;
         maxChargeSoc: number;
         forceChargeSoc?: number | null;
@@ -467,6 +521,9 @@ export async function tickFollowLoad(): Promise<void> {
     // (armé mais en attente : on retombe dans le flux normal ci-dessous ;
     // le bloc de restauration gère un éventuel plafond BMS resté relevé.)
   }
+  // Forçage annulé (UI) ou en attente : rend au PowerStream sa priorité
+  // d'avant la charge si on l'avait passé en stockage.
+  await restorePsAfterForce();
   // Forçage inactif/en attente alors que le plafond BMS avait été relevé
   // (ex. annulation depuis l'UI) : on restaure le plafond avant de reprendre
   // le cours normal.
