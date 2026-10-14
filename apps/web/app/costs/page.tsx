@@ -75,12 +75,15 @@ async function updateContract(network: string, formData: FormData) {
 export default async function CostsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ p?: string }>;
+  searchParams: Promise<{ p?: string; v?: string }>;
 }) {
-  const { p } = await searchParams;
+  const { p, v } = await searchParams;
   const period: PeriodKey = PERIODS.some((x) => x.key === p)
     ? (p as PeriodKey)
     : "month";
+  // Vue du tableau par jour : énergie seule ou abonnement inclus.
+  const withSub = v === "abo";
+  const href = (pp: PeriodKey, ab: boolean) => `/costs?p=${pp}${ab ? "&v=abo" : ""}`;
   const { from, to } = periodRange(period);
   const [report, contracts] = await Promise.all([
     computeCosts(from, to),
@@ -110,7 +113,7 @@ export default async function CostsPage({
         {PERIODS.map((x) => (
           <Link
             key={x.key}
-            href={`/costs?p=${x.key}`}
+            href={href(x.key, withSub)}
             className={
               "btn text-xs " +
               (x.key === period
@@ -207,8 +210,29 @@ export default async function CostsPage({
 
       {report.days.length > 1 && (
         <div className="card overflow-x-auto">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 mb-3">
-            Par jour (énergie, hors abonnement)
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+              Par jour ({withSub ? "abonnement inclus" : "énergie seule, hors abonnement"})
+            </div>
+            <div className="flex gap-1">
+              {[
+                { ab: false, label: "Énergie seule" },
+                { ab: true, label: "Avec abonnement" },
+              ].map((o) => (
+                <Link
+                  key={o.label}
+                  href={href(period, o.ab)}
+                  className={
+                    "btn text-xs " +
+                    (o.ab === withSub
+                      ? "bg-emerald-900/50 text-emerald-100 border border-emerald-700"
+                      : "btn-ghost")
+                  }
+                >
+                  {o.label}
+                </Link>
+              ))}
+            </div>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -223,6 +247,8 @@ export default async function CostsPage({
             <tbody className="font-mono">
               {report.days.map((d) => {
                 const [, mm, dd] = d.date.split("-");
+                const r1 = d.houseEur + (withSub ? d.houseSubEur : 0);
+                const r2 = d.auxEur + (withSub ? d.auxSubEur : 0);
                 return (
                   <tr key={d.date} className="border-t border-zinc-800/70">
                     <td className="py-1.5 pr-3 font-sans">
@@ -234,9 +260,9 @@ export default async function CostsPage({
                         {dd}/{mm}
                       </span>
                     </td>
-                    <td className="py-1.5 pr-3 text-right">{eur(d.houseEur)}</td>
-                    <td className="py-1.5 pr-3 text-right">{eur(d.auxEur)}</td>
-                    <td className="py-1.5 pr-3 text-right">{eur(d.houseEur + d.auxEur)}</td>
+                    <td className="py-1.5 pr-3 text-right">{eur(r1)}</td>
+                    <td className="py-1.5 pr-3 text-right">{eur(r2)}</td>
+                    <td className="py-1.5 pr-3 text-right">{eur(r1 + r2)}</td>
                     <td className="py-1.5 text-right text-emerald-300">{eur(d.savingsEur)}</td>
                   </tr>
                 );

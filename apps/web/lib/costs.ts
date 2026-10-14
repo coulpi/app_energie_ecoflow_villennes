@@ -190,6 +190,9 @@ export interface DayCost {
   auxKWh: number;
   auxEur: number;
   savingsEur: number;
+  /** Abonnement proratisé sur la part du jour comprise dans la période. */
+  houseSubEur: number;
+  auxSubEur: number;
 }
 
 export interface CostReport {
@@ -339,6 +342,8 @@ export async function computeCosts(from: Date, to: Date): Promise<CostReport> {
       auxKWh: 0,
       auxEur: 0,
       savingsEur: 0,
+      houseSubEur: 0,
+      auxSubEur: 0,
     };
 
     const charge = (net: NetworkCost, contract: Contract, wh: number) => {
@@ -387,6 +392,23 @@ export async function computeCosts(from: Date, to: Date): Promise<CostReport> {
   ] as const) {
     net.subscriptionEur = (contract.subscriptionMonthlyEur * 12 * periodHours) / (365 * 24);
     net.totalEur = net.energyEur + net.subscriptionEur;
+  }
+
+  // Abonnement par jour : prorata des heures du jour local comprises dans
+  // la période (journée entière = mensuel × 12 / 365).
+  const subPerHour = (c: Contract) => (c.subscriptionMonthlyEur * 12) / (365 * 24);
+  for (const day of days.values()) {
+    const [y, m, d] = day.date.split("-").map(Number) as [number, number, number];
+    const dayStart = localMidnight(y, m, d);
+    const next = localParts(new Date(dayStart.getTime() + 36 * 3_600_000));
+    const dayEnd = localMidnight(next.y, next.m, next.d);
+    const hoursIn =
+      Math.max(
+        0,
+        Math.min(dayEnd.getTime(), end.getTime()) - Math.max(dayStart.getTime(), from.getTime()),
+      ) / 3_600_000;
+    day.houseSubEur = subPerHour(contracts.HOUSE) * hoursIn;
+    day.auxSubEur = subPerHour(contracts.AUX) * hoursIn;
   }
 
   return {
