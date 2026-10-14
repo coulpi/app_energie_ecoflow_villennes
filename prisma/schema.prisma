@@ -155,6 +155,11 @@ model ReadingHourly {
   avgPowerW  Float?
   prodWh     Float?
   consoWh    Float?
+  // Compteurs réseau (GRID_METER, AUX_NETWORK_METER) : énergie importée /
+  // exportée séparément (avgPowerW nette mélange les deux dans l'heure).
+  // Base du calcul des coûts Tempo.
+  importWh   Float?
+  exportWh   Float?
   minSoc     Float?
   maxSoc     Float?
   samples    Int      @default(0)
@@ -285,6 +290,34 @@ model TariffWindow {
   updatedAt   DateTime     @updatedAt
 
   @@index([enabled, period])
+}
+
+// Couleur EDF Tempo par jour Tempo (6h → 6h le lendemain), historisée par
+// le poller Tempo pour valoriser les consommations passées.
+model TempoDay {
+  date      String   @id // YYYY-MM-DD, jour Tempo commençant à 6h
+  color     String // BLUE | WHITE | RED
+  updatedAt DateTime @updatedAt
+}
+
+// Contrat Tempo d'un réseau électrique (maison / piscine-jacuzzi, compteurs
+// distincts) : prix TTC du kWh par couleur × HC/HP + abonnement. Sert au
+// calcul des coûts (/costs). Créé avec la grille EDF au 1er août 2026.
+model EnergyContract {
+  network                String   @id // HOUSE | AUX
+  name                   String
+  kva                    Int?
+  subscriptionMonthlyEur Float    @default(0)
+  // Heures creuses en minutes locales (défaut 22h → 6h).
+  hcStartMinute          Int      @default(1320)
+  hcEndMinute            Int      @default(360)
+  blueHc                 Float    @default(0.1356)
+  blueHp                 Float    @default(0.1654)
+  whiteHc                Float    @default(0.1536)
+  whiteHp                Float    @default(0.1921)
+  redHc                  Float    @default(0.1615)
+  redHp                  Float    @default(0.7295)
+  updatedAt              DateTime @updatedAt
 }
 
 // État courant du contrôleur — singleton (key = "default").

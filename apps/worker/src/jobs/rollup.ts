@@ -53,6 +53,18 @@ export async function runRollupOnce(now = new Date()): Promise<void> {
         consoWh = Math.max(0, e);
     }
 
+    // Compteurs réseau : import / export séparés (une heure peut mêler
+    // les deux, la moyenne nette les compenserait). Base des coûts Tempo.
+    let importWh: number | null = null;
+    let exportWh: number | null = null;
+    if (
+      (d.role === "GRID_METER" || d.role === "AUX_NETWORK_METER") &&
+      powers.length > 0
+    ) {
+      importWh = powers.reduce((a, p) => a + Math.max(0, p), 0) / powers.length;
+      exportWh = powers.reduce((a, p) => a + Math.max(0, -p), 0) / powers.length;
+    }
+
     await prisma.readingHourly.upsert({
       where: { deviceId_hourTs: { deviceId: d.id, hourTs: targetStart } },
       create: {
@@ -61,6 +73,8 @@ export async function runRollupOnce(now = new Date()): Promise<void> {
         avgPowerW,
         prodWh,
         consoWh,
+        importWh,
+        exportWh,
         minSoc: socs.length ? Math.min(...socs) : null,
         maxSoc: socs.length ? Math.max(...socs) : null,
         samples: rows.length,
@@ -69,6 +83,8 @@ export async function runRollupOnce(now = new Date()): Promise<void> {
         avgPowerW,
         prodWh,
         consoWh,
+        importWh,
+        exportWh,
         minSoc: socs.length ? Math.min(...socs) : null,
         maxSoc: socs.length ? Math.max(...socs) : null,
         samples: rows.length,

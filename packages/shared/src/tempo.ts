@@ -41,3 +41,42 @@ export async function fetchTempoColors(
     tomorrow: decode(tomorrow?.codeJour),
   };
 }
+
+export interface TempoDayColor {
+  date: string; // YYYY-MM-DD
+  color: Exclude<TempoColor, "UNKNOWN">;
+}
+
+/**
+ * Saison Tempo contenant `d` (1er septembre → 31 août), au format de
+ * l'API : "2026-2027".
+ */
+export function tempoSeasonOf(d: Date): string {
+  const y = d.getUTCFullYear();
+  const start = d.getUTCMonth() >= 8 ? y : y - 1;
+  return `${start}-${start + 1}`;
+}
+
+/**
+ * Historique des couleurs d'une saison Tempo (jours publiés uniquement).
+ * GET /api/joursTempo?periode=2026-2027 → [{ dateJour, codeJour }, …]
+ */
+export async function fetchTempoSeason(
+  season: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<TempoDayColor[]> {
+  const r = await fetchImpl(
+    `https://www.api-couleur-tempo.fr/api/joursTempo?periode=${encodeURIComponent(season)}`,
+    { signal: AbortSignal.timeout(15_000) },
+  );
+  if (!r.ok) throw new Error(`api-couleur-tempo HTTP ${r.status}`);
+  const rows = (await r.json()) as Array<{ dateJour: string; codeJour: number }>;
+  const out: TempoDayColor[] = [];
+  for (const row of rows) {
+    const color = decode(row.codeJour);
+    if (color !== "UNKNOWN" && /^\d{4}-\d{2}-\d{2}$/.test(row.dateJour)) {
+      out.push({ date: row.dateJour, color });
+    }
+  }
+  return out;
+}

@@ -37,6 +37,16 @@ const items: { href: string; icon: React.ReactNode; label: string }[] = [
     ),
   },
   {
+    href: "/costs",
+    label: "Coûts",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <path d="M17 6.5A7 7 0 1 0 17 17.5" strokeLinecap="round" />
+        <path d="M4 10h9M4 14h9" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/devices",
     label: "Équipements",
     icon: (

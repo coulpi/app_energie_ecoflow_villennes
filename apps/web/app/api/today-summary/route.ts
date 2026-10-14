@@ -3,10 +3,9 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { computeCosts } from "@/lib/costs";
 
 export const dynamic = "force-dynamic";
-
-const PRICE_PER_KWH = 0.2516; // tarif bleu base ~mai 2026 (€/kWh, à ajuster)
 
 async function rollupSum(
   role: string,
@@ -56,18 +55,16 @@ export async function GET() {
     rollupSum("CONSUMPTION_METER", "consoWh", since),
     integrateGridExportedWh(since),
   ]);
-  // Savings = production auto-consommée × prix kWh.
-  // (production - export) = ce qui n'a pas été acheté au réseau.
-  const savedKWh = Math.max(0, producedWh - exportedWh) / 1000;
-  const savedEur = savedKWh * PRICE_PER_KWH;
+  // Économies = conso maison non achetée au réseau (solaire + batterie),
+  // valorisée heure par heure au tarif Tempo (cf. lib/costs).
+  const { savings } = await computeCosts(since, new Date());
 
   return NextResponse.json(
     {
       producedWh: Math.round(producedWh),
       consumedWh: Math.round(consumedWh),
       exportedWh: Math.round(exportedWh),
-      savedEur: Number(savedEur.toFixed(2)),
-      pricePerKWh: PRICE_PER_KWH,
+      savedEur: Number(savings.eur.toFixed(2)),
     },
     { headers: { "Cache-Control": "no-store" } },
   );

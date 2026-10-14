@@ -216,6 +216,28 @@ Récupéré 1×/h via `api-couleur-tempo.fr` (sans auth). Stocké dans
 `ControlState.tempoColor` / `tempoColorTomorrow`. Utilisé pour la
 décharge programmée (heures différentes selon couleur).
 
+Historique : `syncTempoHistory` (worker, `pollers/tempo.ts`) remplit la
+table `TempoDay` (date = jour Tempo, 6h → 6h) depuis
+`/api/joursTempo?periode=2026-2027` — saison courante chaque heure,
+saison précédente au démarrage.
+
+## Coûts Tempo (`/costs`, `apps/web/lib/costs.ts`)
+
+- 2 réseaux = 2 compteurs / contrats distincts : `HOUSE` (import du
+  `GRID_METER`) et `AUX` (piscine + jacuzzi, `AUX_NETWORK_METER`).
+- Contrats en BD (`EnergyContract`, éditables sur `/costs`) : prix TTC du
+  kWh couleur × HC/HP, plage HC (défaut 22h-6h), abonnement €/mois.
+  Créés au 1er accès avec la grille EDF du 1er août 2026 ; maison 9 kVA
+  (19,70 €/mois), piscine abonnement à 0 (inconnu, à saisir).
+- Valorisation heure par heure sur `ReadingHourly` : `importWh`
+  (rempli par le rollup pour les compteurs réseau ; avant son ajout,
+  repli sur `max(0, avgPowerW)`), couleur via `tempoDateOf(heure − 6h)`,
+  HC/HP selon l'heure locale de début. Abonnement proratisé à la durée.
+- Économies = conso maison (pince Shelly `CONSUMPTION_METER`) − import,
+  au tarif de l'heure (solaire + décharge batterie). Repli sur
+  production − export sans pince. Alimente aussi `savedEur` de
+  `/api/today-summary`. La charge batterie est payée côté `AUX`.
+
 ## Jacuzzi Intex — pilotage chauffage par surplus
 
 Setup physique :
