@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import CostChart, { type CostPoint } from "./CostChart";
 import {
   computeCosts,
+  computeMonthlyCosts,
   getContracts,
   periodRange,
   PERIODS,
@@ -85,10 +87,36 @@ export default async function CostsPage({
   const withSub = v === "abo";
   const href = (pp: PeriodKey, ab: boolean) => `/costs?p=${pp}${ab ? "&v=abo" : ""}`;
   const { from, to } = periodRange(period);
-  const [report, contracts] = await Promise.all([
+  const [report, contracts, monthly] = await Promise.all([
     computeCosts(from, to),
     getContracts(),
+    computeMonthlyCosts(12),
   ]);
+  const dailyPoints: CostPoint[] = report.days.map((d) => {
+    const [, mm, dd] = d.date.split("-");
+    return {
+      label: `${dd}/${mm}`,
+      r1: d.houseEur,
+      r2: d.auxEur,
+      sub: withSub ? d.houseSubEur + d.auxSubEur : 0,
+      savings: d.savingsEur,
+    };
+  });
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split("-").map(Number) as [number, number];
+    return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString("fr-FR", {
+      month: "short",
+      year: "2-digit",
+      timeZone: "UTC",
+    });
+  };
+  const monthlyPoints: CostPoint[] = monthly.map((m) => ({
+    label: monthLabel(m.month),
+    r1: m.houseEur,
+    r2: m.auxEur,
+    sub: withSub ? m.houseSubEur + m.auxSubEur : 0,
+    savings: m.savingsEur,
+  }));
   const total = report.house.totalEur + report.aux.totalEur;
   const fmtDate = (d: Date) =>
     d.toLocaleString("fr-FR", {
@@ -234,6 +262,9 @@ export default async function CostsPage({
               ))}
             </div>
           </div>
+          <div className="mb-4">
+            <CostChart data={dailyPoints} showSub={withSub} />
+          </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-zinc-500">
@@ -267,6 +298,65 @@ export default async function CostsPage({
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {monthlyPoints.length > 0 && (
+        <div className="card overflow-x-auto">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+              Évolution mensuelle · 12 derniers mois (
+              {withSub ? "abonnement inclus" : "énergie seule"})
+            </div>
+            <div className="flex gap-1">
+              {[
+                { ab: false, label: "Énergie seule" },
+                { ab: true, label: "Avec abonnement" },
+              ].map((o) => (
+                <Link
+                  key={o.label}
+                  href={href(period, o.ab)}
+                  className={
+                    "btn text-xs " +
+                    (o.ab === withSub
+                      ? "bg-emerald-900/50 text-emerald-100 border border-emerald-700"
+                      : "btn-ghost")
+                  }
+                >
+                  {o.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+          <div className="mb-4">
+            <CostChart data={monthlyPoints} showSub={withSub} />
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="py-1 pr-3 font-normal">Mois</th>
+                <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>
+                <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>
+                <th className="py-1 pr-3 font-normal text-right">Total</th>
+                <th className="py-1 font-normal text-right">Économies</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono">
+              {monthlyPoints.map((m, i) => (
+                <tr key={monthly[i]!.month} className="border-t border-zinc-800/70">
+                  <td className="py-1.5 pr-3 font-sans capitalize">{m.label}</td>
+                  <td className="py-1.5 pr-3 text-right">
+                    {eur(m.r1 + (withSub ? monthly[i]!.houseSubEur : 0))}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right">
+                    {eur(m.r2 + (withSub ? monthly[i]!.auxSubEur : 0))}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right">{eur(m.r1 + m.r2 + m.sub)}</td>
+                  <td className="py-1.5 text-right text-emerald-300">{eur(m.savings)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

@@ -421,3 +421,48 @@ export async function computeCosts(from: Date, to: Date): Promise<CostReport> {
     days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
   };
 }
+
+export interface MonthCost {
+  month: string; // YYYY-MM
+  houseKWh: number;
+  houseEur: number;
+  houseSubEur: number;
+  auxKWh: number;
+  auxEur: number;
+  auxSubEur: number;
+  savingsEur: number;
+}
+
+/** Coûts agrégés par mois calendaire sur les `months` derniers mois. */
+export async function computeMonthlyCosts(
+  months = 12,
+  now = new Date(),
+): Promise<MonthCost[]> {
+  const p = localParts(now);
+  const startIdx = p.y * 12 + (p.m - 1) - (months - 1);
+  const from = localMidnight(Math.floor(startIdx / 12), (startIdx % 12) + 1, 1);
+  const report = await computeCosts(from, now);
+  const byMonth = new Map<string, MonthCost>();
+  for (const d of report.days) {
+    const month = d.date.slice(0, 7);
+    const m = byMonth.get(month) ?? {
+      month,
+      houseKWh: 0,
+      houseEur: 0,
+      houseSubEur: 0,
+      auxKWh: 0,
+      auxEur: 0,
+      auxSubEur: 0,
+      savingsEur: 0,
+    };
+    m.houseKWh += d.houseKWh;
+    m.houseEur += d.houseEur;
+    m.houseSubEur += d.houseSubEur;
+    m.auxKWh += d.auxKWh;
+    m.auxEur += d.auxEur;
+    m.auxSubEur += d.auxSubEur;
+    m.savingsEur += d.savingsEur;
+    byMonth.set(month, m);
+  }
+  return [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
