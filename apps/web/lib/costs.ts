@@ -59,14 +59,21 @@ const DEFAULT_CONTRACTS: Record<
 };
 
 export async function getContracts(): Promise<Record<Network, Contract>> {
+  // createMany + skipDuplicates : pas de course quand plusieurs requêtes
+  // créent les contrats par défaut en même temps (upsert → P2002).
+  await prisma.energyContract.createMany({
+    data: (["HOUSE", "AUX"] as const).map((network) => ({
+      network,
+      ...DEFAULT_CONTRACTS[network],
+    })),
+    skipDuplicates: true,
+  });
+  const rows = await prisma.energyContract.findMany();
   const out = {} as Record<Network, Contract>;
-  for (const network of ["HOUSE", "AUX"] as const) {
-    const c = await prisma.energyContract.upsert({
-      where: { network },
-      create: { network, ...DEFAULT_CONTRACTS[network] },
-      update: {},
-    });
-    out[network] = { ...c, network };
+  for (const c of rows) {
+    if (c.network === "HOUSE" || c.network === "AUX") {
+      out[c.network] = { ...c, network: c.network };
+    }
   }
   return out;
 }
@@ -222,7 +229,7 @@ interface HourAcc {
   ts: Date;
   houseImportWh: number | null;
   houseExportWh: number | null;
-  houseConsoWh: number | null;
+  batDischargeWh: number | null;
   prodWh: number | null;
   auxImportWh: number | null;
 }
@@ -239,7 +246,7 @@ export async function computeCosts(from: Date, to: Date): Promise<CostReport> {
         in: [
           "GRID_METER",
           "AUX_NETWORK_METER",
-          "CONSUMPTION_METER",
+          "BATTERY",
           "PRODUCTION_METER",
         ] as never,
       },
@@ -272,7 +279,7 @@ export async function computeCosts(from: Date, to: Date): Promise<CostReport> {
       ts: r.hourTs,
       houseImportWh: null,
       houseExportWh: null,
-      houseConsoWh: null,
+      batDischargeWh: null,
       prodWh: null,
       auxImportWh: null,
     };
@@ -288,8 +295,10 @@ export async function computeCosts(from: Date, to: Date): Promise<CostReport> {
       case "AUX_NETWORK_METER":
         if (imp !== null) h.auxImportWh = add(h.auxImportWh, imp);
         break;
-      case "CONSUMPTION_METER":
-        if (r.consoWh !== null) h.houseConsoWh = add(h.houseConsoWh, r.consoWh);
+      case "BATTERY":
+        // powerW batterie : + = décharge (vers la maison via PowerStream).
+        if (r.avgPowerW !== null)
+          h.batDischargeWh = add(h.batDischargeWh, Math.max(0, r.avgPowerW));
         break;
       case "PRODUCTION_METER":
         if (r.prodWh !== null) h.prodWh = add(h.prodWh, r.prodWh);
@@ -349,15 +358,13 @@ export async function computeCosts(from: Date, to: Date): Promise<CostReport> {
       day.houseKWh += r.kWh;
       day.houseEur += r.eur;
 
-      // Économies : conso maison non achetée au réseau (solaire + batterie
-      // via PowerStream). Conso mesurée par la pince Shelly maison ; à
-      // défaut, production solaire non exportée.
+      // Économies : conso maison non achetée au réseau = production
+      // solaire non exportée + décharge batterie (PowerStream). NB : la
+      // pince Shelly « conso maison » mesure en fait le point de livraison
+      // (≈ import, 0 en export) → inutilisable ici.
       const coveredWh =
-        h.houseConsoWh !== null
-          ? Math.max(0, h.houseConsoWh - h.houseImportWh)
-          : h.prodWh !== null
-            ? Math.max(0, h.prodWh - (h.houseExportWh ?? 0))
-            : 0;
+        Math.max(0, (h.prodWh ?? 0) - (h.houseExportWh ?? 0)) +
+        (h.batDischargeWh ?? 0);
       const slot: Slot = `${c}_${isHc(minuteOfDay, contracts.HOUSE) ? "HC" : "HP"}`;
       const sEur = (coveredWh / 1000) * contracts.HOUSE[SLOT_FIELD[slot]];
       savings.kWh += coveredWh / 1000;

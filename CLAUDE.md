@@ -233,9 +233,10 @@ saison précédente au démarrage.
   (rempli par le rollup pour les compteurs réseau ; avant son ajout,
   repli sur `max(0, avgPowerW)`), couleur via `tempoDateOf(heure − 6h)`,
   HC/HP selon l'heure locale de début. Abonnement proratisé à la durée.
-- Économies = conso maison (pince Shelly `CONSUMPTION_METER`) − import,
-  au tarif de l'heure (solaire + décharge batterie). Repli sur
-  production − export sans pince. Alimente aussi `savedEur` de
+- Économies = production solaire non exportée + décharge batterie
+  (`BATTERY` avgPowerW > 0), au tarif de l'heure. **Ne pas** utiliser la
+  pince Shelly `CONSUMPTION_METER` : elle mesure le point de livraison
+  (≈ import, 0 en export), pas la conso totale. Alimente aussi `savedEur` de
   `/api/today-summary`. La charge batterie est payée côté `AUX`.
 
 ## Jacuzzi Intex — pilotage chauffage par surplus
