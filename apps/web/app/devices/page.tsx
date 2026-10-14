@@ -36,6 +36,25 @@ function buildVendorMeta(
   return Object.keys(meta).length > 0 ? meta : null;
 }
 
+/**
+ * `externalId` est unique : pour un Shelly avec canal, on suffixe `#<n>`
+ * (s'il n'y en a pas déjà un) afin de pouvoir déclarer chaque pince du
+ * même boîtier comme un Device distinct.
+ */
+function buildExternalId(formData: FormData): string {
+  const raw = String(formData.get("externalId") ?? "").trim();
+  const channelRaw = String(formData.get("channel") ?? "").trim();
+  if (
+    String(formData.get("type") ?? "") === "SHELLY_METER" &&
+    /^\d+$/.test(channelRaw) &&
+    raw &&
+    !raw.includes("#")
+  ) {
+    return `${raw}#${channelRaw}`;
+  }
+  return raw;
+}
+
 const TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "TUYA_METER", label: "Tuya — compteur" },
   { value: "TUYA_SWITCH", label: "Tuya — prise on/off" },
@@ -50,7 +69,7 @@ async function createDevice(formData: FormData) {
     data: {
       type: String(formData.get("type")) as never,
       role: String(formData.get("role")) as never,
-      externalId: String(formData.get("externalId")),
+      externalId: buildExternalId(formData),
       name: String(formData.get("name")),
       vendorMeta: (buildVendorMeta(formData, null) ?? undefined) as never,
       capabilities: formData.get("switchCode")
@@ -95,7 +114,7 @@ async function updateDevice(id: string, formData: FormData) {
       name: String(formData.get("name") ?? "").trim() || undefined,
       type: (String(formData.get("type") ?? "") || undefined) as never,
       role: (String(formData.get("role") ?? "") || undefined) as never,
-      externalId: String(formData.get("externalId") ?? "").trim() || undefined,
+      externalId: buildExternalId(formData) || undefined,
       vendorMeta: (vendorMeta ?? Prisma.JsonNull) as never,
       capabilities: switchCode ? { switchCode } : null,
     },

@@ -10,6 +10,8 @@ interface FlowSnapshot {
   batterySoc: number | null;
   switchOn: boolean | null;
   acSwitchPowerW: number | null;
+  auxNetworkW: number | null;
+  auxNetworkName: string | null;
   controlMode: string;
   followLoadOffsetW: number | null;
   followLoadMinW: number | null;
@@ -65,6 +67,7 @@ const C = {
   grid: "oklch(78% 0.13 220)",
   battery: "oklch(75% 0.16 305)",
   importRed: "oklch(70% 0.21 25)",
+  aux: "oklch(80% 0.13 190)",
 } as const;
 
 interface ColorScheme {
@@ -72,28 +75,43 @@ interface ColorScheme {
   glow: string;
 }
 
-const FD: Record<"solar" | "home" | "grid" | "battery" | "importRed", ColorScheme> = {
+const FD: Record<"solar" | "home" | "grid" | "battery" | "importRed" | "aux", ColorScheme> = {
   solar: { base: C.solar, glow: "oklch(82% 0.18 75 / 0.35)" },
   home: { base: C.home, glow: "oklch(78% 0.18 155 / 0.35)" },
   grid: { base: C.grid, glow: "oklch(78% 0.15 220 / 0.35)" },
   battery: { base: C.battery, glow: "oklch(75% 0.18 305 / 0.35)" },
   importRed: { base: C.importRed, glow: "oklch(70% 0.21 25 / 0.35)" },
+  aux: { base: C.aux, glow: "oklch(80% 0.15 190 / 0.35)" },
 };
 const FD_DIM = "rgba(255,255,255,0.08)";
 
 const GEO = {
   W: 1000,
-  H: 660,
+  H: 950,
   solar: { x: 500, y: 110, r: 58 },
   home: { x: 500, y: 410, r: 64 },
-  battery: { x: 90, y: 360, r: 54 },
   grid: { x: 910, y: 360, r: 54 },
-  // Équipements : 4 mini-nœuds en ligne sous home, dans le périmètre
-  // maison. Rayon 24 pour rester discrets.
+  // Batterie à cheval sur les 2 réseaux : charge depuis le réseau
+  // piscine/jacuzzi (prise AC IN), décharge vers la maison (PowerStream).
+  battery: { x: 90, y: 665, r: 54 },
+  // Réseau indépendant piscine + jacuzzi, sous le périmètre maison.
+  aux: { x: 560, y: 790, r: 54 },
+  auxGrid: { x: 910, y: 790, r: 54 },
+  // Équipements : mini-nœuds en ligne, centrés sous le nœud de leur
+  // réseau. Rayon 24 pour rester discrets.
   equipmentY: 580,
   equipmentR: 24,
-  equipmentXs: [220, 380, 540, 700] as readonly number[],
+  equipmentGap: 150,
+  auxEquipmentY: 875,
+  auxEquipmentCx: 360,
+  auxEquipmentGap: 130,
+  housePerimeter: { x: 20, y: 10, w: 800, h: 640 },
+  auxPerimeter: { x: 20, y: 680, w: 800, h: 250 },
 } as const;
+
+// Piscine et jacuzzi sont sur le réseau indépendant : leurs profils de
+// charge sont rattachés au nœud de ce réseau, pas à la maison.
+const AUX_LOAD_RE = /piscine|jacuzzi|\bspa\b|pool/i;
 
 interface SeriesPayload {
   production: number[];
@@ -345,11 +363,16 @@ export default function EnergyFlow({ initial }: { initial: FlowSnapshot }) {
                 <Legend color={C.battery} label="Batterie" />
                 <Legend color={C.grid} label="Réseau" />
                 <Legend color={C.importRed} label="Import" />
+                <Legend color={C.aux} label="Piscine / jacuzzi" />
               </div>
             </div>
 
-            <div style={{ position: "relative", height: 600 }}>
-              <FlowDiagram scenario={scenario} liveLoads={liveLoads} />
+            <div style={{ position: "relative", height: 820 }}>
+              <FlowDiagram
+                scenario={scenario}
+                liveLoads={liveLoads}
+                auxNetworkW={snap.auxNetworkW ?? null}
+              />
             </div>
           </div>
 
@@ -2041,26 +2064,57 @@ function TodaySummary({ today }: { today: TodaySummaryData | null }) {
 function FlowDiagram({
   scenario,
   liveLoads,
+  auxNetworkW,
 }: {
   scenario: Scenario;
   liveLoads: LiveLoadPayload | null;
+  auxNetworkW: number | null;
 }) {
   const { production, consumption, gridFlow, batteryFlow, batteryLevel } = scenario;
 
   const gridToHome = Math.max(0, gridFlow > 0 ? gridFlow : 0);
   const homeToGrid = Math.max(0, gridFlow < 0 ? -gridFlow : 0);
   const batteryToHome = Math.max(0, batteryFlow < 0 ? -batteryFlow : 0);
-  const homeToBattery = Math.max(0, batteryFlow > 0 ? batteryFlow : 0);
+  // La prise AC IN de la batterie est sur le réseau piscine/jacuzzi : la
+  // charge vient de ce réseau, pas de la maison.
+  const auxToBattery = Math.max(0, batteryFlow > 0 ? batteryFlow : 0);
   // solar → maison : la maison est un nœud passif, ce qui entre = ce qui sort.
   // Le flux solaire vers la maison est la somme effective des sorties (conso
-  // réelle + ce qui repart vers batterie/réseau) bornée par la production.
+  // réelle + ce qui repart vers le réseau) bornée par la production.
   // Évite le flux fantôme quand la conso calculée par bilan tombe négative.
-  const homeOutflow = Math.max(0, consumption) + homeToBattery + homeToGrid;
+  const homeOutflow = Math.max(0, consumption) + homeToGrid;
   const solarToHome = Math.max(0, Math.min(production, homeOutflow));
+
+  const profiles = liveLoads?.profiles ?? [];
+  const homeLoads = profiles.filter((p) => !isAuxLoad(p));
+  const auxLoads = profiles.filter(isAuxLoad);
+  // Réseau piscine/jacuzzi : la pince Shelly dédiée fait foi. Sans elle,
+  // on estime avec les prises mesurées + la charge batterie.
+  const auxMeasured = auxNetworkW !== null;
+  const auxTotal = Math.round(
+    auxNetworkW !== null
+      ? Math.max(0, auxNetworkW)
+      : auxLoads.reduce((sum, p) => sum + (p.currentlyOn ? loadPower(p) : 0), 0) +
+          auxToBattery,
+  );
+  const auxHasData = auxMeasured || auxLoads.length > 0 || auxToBattery > 0;
+
+  const homeEquipment = homeLoads.map((p, i) => ({
+    p,
+    x: GEO.home.x + (i - (homeLoads.length - 1) / 2) * GEO.equipmentGap,
+    y: GEO.equipmentY,
+  }));
+  const auxEquipment = auxLoads.map((p, i) => ({
+    p,
+    x: GEO.auxEquipmentCx + (i - (auxLoads.length - 1) / 2) * GEO.auxEquipmentGap,
+    y: GEO.auxEquipmentY,
+  }));
 
   const pSolarHome = curvePath(GEO.solar, GEO.home, 0);
   const pGridHome = curvePath(GEO.grid, GEO.home, 0.18);
   const pBatteryHome = curvePath(GEO.battery, GEO.home, -0.18);
+  const pAuxGridAux = curvePath(GEO.auxGrid, GEO.aux, 0);
+  const pAuxBattery = curvePath(GEO.aux, GEO.battery, -0.1);
 
   return (
     <svg
@@ -2075,6 +2129,7 @@ function FlowDiagram({
             ["MAISON", FD.home],
             ["BATTERIE", FD.battery],
             ["RESEAU", FD.grid],
+            ["PISCINE", FD.aux],
           ] as const
         ).map(([k, c]) => (
           <radialGradient key={k} id={`fd-grad-${k}`} cx="50%" cy="50%" r="50%">
@@ -2100,35 +2155,22 @@ function FlowDiagram({
       <rect x="0" y="0" width={GEO.W} height={GEO.H} fill="url(#fd-grid)" />
       <rect x="0" y="0" width={GEO.W} height={GEO.H} fill="url(#fd-vignette)" />
 
-      {/* Périmètre maison : cadre pointillé qui englobe panneaux,
-          batterie et maison (= ce qui est derrière le compteur ENEDIS,
-          réseau exclu). */}
-      <g style={{ pointerEvents: "none" }}>
-        <rect
-          x={20}
-          y={10}
-          width={800}
-          height={640}
-          rx={22}
-          ry={22}
-          fill="none"
-          stroke="rgba(255,255,255,0.18)"
-          strokeWidth={1.4}
-          strokeDasharray="6 6"
-        />
-        <text
-          x={44}
-          y={32}
-          style={{
-            font: "600 10px ui-sans-serif, system-ui",
-            letterSpacing: "0.18em",
-            fill: "rgba(255,255,255,0.45)",
-            textTransform: "uppercase",
-          }}
-        >
-          Périmètre maison
-        </text>
-      </g>
+      {/* Périmètres : réseau maison (panneaux, maison, équipements) et
+          réseau indépendant piscine/jacuzzi. La batterie est à cheval :
+          elle charge sur le second et décharge vers le premier. */}
+      <Perimeter
+        {...GEO.housePerimeter}
+        stroke="rgba(255,255,255,0.18)"
+        label="Réseau maison"
+        labelX={GEO.housePerimeter.x + 24}
+      />
+      <Perimeter
+        {...GEO.auxPerimeter}
+        stroke="oklch(80% 0.13 190 / 0.4)"
+        label="Réseau indépendant · piscine + jacuzzi"
+        labelX={GEO.auxPerimeter.x + GEO.auxPerimeter.w - 24}
+        labelAnchor="end"
+      />
 
       <FlowPath d={pSolarHome} color={FD.solar} power={solarToHome} />
       <FlowPath
@@ -2137,56 +2179,56 @@ function FlowDiagram({
         power={Math.max(gridToHome, homeToGrid)}
         reverse={homeToGrid > 0}
       />
+      <FlowPath d={pBatteryHome} color={FD.battery} power={batteryToHome} />
       <FlowPath
-        d={pBatteryHome}
-        color={FD.battery}
-        power={Math.max(batteryToHome, homeToBattery)}
-        reverse={homeToBattery > 0}
+        d={pAuxGridAux}
+        color={auxTotal > 0 ? FD.importRed : FD.grid}
+        power={auxTotal}
       />
+      <FlowPath d={pAuxBattery} color={FD.battery} power={auxToBattery} />
 
-      {/* Équipements maison : flux animé home → équipement quand ON.
+      {/* Équipements : flux animé réseau → équipement quand ON.
           Pour les profils mesurés (prise Tuya), on affiche la puissance
           live (measuredW). Sinon, on retombe sur expectedW. */}
-      {liveLoads?.profiles?.map((p, i) => {
-        const x = GEO.equipmentXs[i] ?? 500;
-        const y = GEO.equipmentY;
-        const path = curvePath(
-          GEO.home,
-          { x, y, r: GEO.equipmentR },
-          0,
-        );
-        const livePower =
-          p.source === "measured" && typeof p.measuredW === "number"
-            ? p.measuredW
-            : p.expectedW;
-        return (
-          <FlowPath
-            key={`eqflow-${p.id}`}
-            d={path}
-            color={FD.home}
-            power={p.currentlyOn ? livePower : 0}
-          />
-        );
-      })}
-      {liveLoads?.profiles?.map((p, i) => {
-        const x = GEO.equipmentXs[i] ?? 500;
-        const y = GEO.equipmentY;
-        const livePower =
-          p.source === "measured" && typeof p.measuredW === "number"
-            ? p.measuredW
-            : p.expectedW;
-        return (
-          <EquipmentNode
-            key={`eqnode-${p.id}`}
-            cx={x}
-            cy={y}
-            r={GEO.equipmentR}
-            name={p.name}
-            powerW={livePower}
-            on={p.currentlyOn}
-          />
-        );
-      })}
+      {homeEquipment.map(({ p, x, y }) => (
+        <FlowPath
+          key={`eqflow-${p.id}`}
+          d={curvePath(GEO.home, { x, y, r: GEO.equipmentR }, 0)}
+          color={FD.home}
+          power={p.currentlyOn ? loadPower(p) : 0}
+        />
+      ))}
+      {auxEquipment.map(({ p, x, y }) => (
+        <FlowPath
+          key={`eqflow-${p.id}`}
+          d={curvePath(GEO.aux, { x, y, r: GEO.equipmentR }, 0)}
+          color={FD.aux}
+          power={p.currentlyOn ? loadPower(p) : 0}
+        />
+      ))}
+      {homeEquipment.map(({ p, x, y }) => (
+        <EquipmentNode
+          key={`eqnode-${p.id}`}
+          cx={x}
+          cy={y}
+          r={GEO.equipmentR}
+          name={p.name}
+          powerW={loadPower(p)}
+          on={p.currentlyOn}
+        />
+      ))}
+      {auxEquipment.map(({ p, x, y }) => (
+        <EquipmentNode
+          key={`eqnode-${p.id}`}
+          cx={x}
+          cy={y}
+          r={GEO.equipmentR}
+          name={p.name}
+          powerW={loadPower(p)}
+          on={p.currentlyOn}
+          color={FD.aux}
+        />
+      ))}
 
       <Node
         cx={GEO.solar.x}
@@ -2222,8 +2264,34 @@ function FlowDiagram({
         label={gridFlow >= 0 ? "IMPORT" : "EXPORT"}
         value={Math.abs(gridFlow)}
         unit="W"
-        sub="RÉSEAU"
+        sub="RÉSEAU MAISON"
         icon="grid"
+      />
+      <Node
+        cx={GEO.auxGrid.x}
+        cy={GEO.auxGrid.y}
+        r={GEO.auxGrid.r}
+        color={auxTotal > 0 ? FD.importRed : FD.grid}
+        gradId="RESEAU"
+        active={auxTotal > 0}
+        label="IMPORT"
+        value={auxTotal}
+        unit="W"
+        sub="RÉSEAU PISCINE"
+        icon="grid"
+      />
+      <Node
+        cx={GEO.aux.x}
+        cy={GEO.aux.y}
+        r={GEO.aux.r}
+        color={FD.aux}
+        gradId="PISCINE"
+        active={auxTotal > 0}
+        label="PISCINE · SPA"
+        value={auxTotal}
+        unit="W"
+        sub={auxMeasured ? undefined : auxHasData ? "ESTIMÉ" : "NON MESURÉ"}
+        icon="pool"
       />
       <Node
         cx={GEO.battery.x}
@@ -2240,6 +2308,66 @@ function FlowDiagram({
         batteryLevel={batteryLevel / 100}
       />
     </svg>
+  );
+}
+
+function isAuxLoad(p: LiveLoadProfile): boolean {
+  return AUX_LOAD_RE.test(`${p.id} ${p.name}`);
+}
+
+function loadPower(p: LiveLoadProfile): number {
+  return p.source === "measured" && typeof p.measuredW === "number"
+    ? p.measuredW
+    : p.expectedW;
+}
+
+function Perimeter({
+  x,
+  y,
+  w,
+  h,
+  stroke,
+  label,
+  labelX,
+  labelAnchor = "start",
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  stroke: string;
+  label: string;
+  labelX: number;
+  labelAnchor?: "start" | "end";
+}) {
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={22}
+        ry={22}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1.4}
+        strokeDasharray="6 6"
+      />
+      <text
+        x={labelX}
+        y={y + 22}
+        textAnchor={labelAnchor}
+        style={{
+          font: "600 10px ui-sans-serif, system-ui",
+          letterSpacing: "0.18em",
+          fill: "rgba(255,255,255,0.45)",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </text>
+    </g>
   );
 }
 
@@ -2362,7 +2490,7 @@ function Node({
   value: number;
   unit: string;
   sub?: string;
-  icon: "solar" | "home" | "grid" | "battery";
+  icon: "solar" | "home" | "grid" | "battery" | "pool";
   batteryLevel?: number;
 }) {
   return (
@@ -2429,6 +2557,7 @@ function EquipmentNode({
   name,
   powerW,
   on,
+  color: onColor = FD.home,
 }: {
   cx: number;
   cy: number;
@@ -2436,8 +2565,9 @@ function EquipmentNode({
   name: string;
   powerW: number;
   on: boolean;
+  color?: ColorScheme;
 }) {
-  const color = on ? FD.home : { base: "rgba(255,255,255,0.3)", glow: "rgba(255,255,255,0.05)" };
+  const color = on ? onColor :{ base: "rgba(255,255,255,0.3)", glow: "rgba(255,255,255,0.05)" };
   return (
     <g transform={`translate(${cx} ${cy})`}>
       {on && <circle r={r + 8} fill={color.glow} />}
@@ -2480,7 +2610,7 @@ function NodeIcon({
   kind,
   level,
 }: {
-  kind: "solar" | "home" | "grid" | "battery";
+  kind: "solar" | "home" | "grid" | "battery" | "pool";
   level: number;
 }) {
   switch (kind) {
@@ -2557,6 +2687,20 @@ function NodeIcon({
               opacity="0.55"
             />
           )}
+        </g>
+      );
+    case "pool":
+      return (
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M -4 1 L -4 -10 M 4 1 L 4 -10 M -4 -5 L 4 -5" />
+          <path d="M -12 4 Q -9 1 -6 4 T 0 4 T 6 4 T 12 4" />
+          <path d="M -12 10 Q -9 7 -6 10 T 0 10 T 6 10 T 12 10" />
         </g>
       );
   }
