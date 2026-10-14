@@ -77,15 +77,25 @@ async function updateContract(network: string, formData: FormData) {
 export default async function CostsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ p?: string; v?: string }>;
+  searchParams: Promise<{ p?: string; v?: string; n?: string }>;
 }) {
-  const { p, v } = await searchParams;
+  const { p, v, n } = await searchParams;
   const period: PeriodKey = PERIODS.some((x) => x.key === p)
     ? (p as PeriodKey)
     : "month";
-  // Vue du tableau par jour : énergie seule ou abonnement inclus.
+  // Vue des graphiques / tableaux : énergie seule ou abonnement inclus.
   const withSub = v === "abo";
-  const href = (pp: PeriodKey, ab: boolean) => `/costs?p=${pp}${ab ? "&v=abo" : ""}`;
+  // Filtre réseau : les 2, réseau 1 seul ou réseau 2 seul. Les économies
+  // (solaire + batterie) ne concernent que le réseau 1.
+  const net: NetFilter = n === "1" || n === "2" ? n : "all";
+  const show1 = net !== "2";
+  const show2 = net !== "1";
+  const href = (o: { p?: PeriodKey; ab?: boolean; n?: NetFilter }) => {
+    const pp = o.p ?? period;
+    const ab = o.ab ?? withSub;
+    const nn = o.n ?? net;
+    return `/costs?p=${pp}${ab ? "&v=abo" : ""}${nn !== "all" ? `&n=${nn}` : ""}`;
+  };
   const { from, to } = periodRange(period);
   const [report, contracts, monthly] = await Promise.all([
     computeCosts(from, to),
@@ -96,10 +106,10 @@ export default async function CostsPage({
     const [, mm, dd] = d.date.split("-");
     return {
       label: `${dd}/${mm}`,
-      r1: d.houseEur,
-      r2: d.auxEur,
-      sub: withSub ? d.houseSubEur + d.auxSubEur : 0,
-      savings: d.savingsEur,
+      r1: show1 ? d.houseEur : 0,
+      r2: show2 ? d.auxEur : 0,
+      sub: withSub ? (show1 ? d.houseSubEur : 0) + (show2 ? d.auxSubEur : 0) : 0,
+      savings: show1 ? d.savingsEur : 0,
     };
   });
   const monthLabel = (ym: string) => {
@@ -112,12 +122,14 @@ export default async function CostsPage({
   };
   const monthlyPoints: CostPoint[] = monthly.map((m) => ({
     label: monthLabel(m.month),
-    r1: m.houseEur,
-    r2: m.auxEur,
-    sub: withSub ? m.houseSubEur + m.auxSubEur : 0,
-    savings: m.savingsEur,
+    r1: show1 ? m.houseEur : 0,
+    r2: show2 ? m.auxEur : 0,
+    sub: withSub ? (show1 ? m.houseSubEur : 0) + (show2 ? m.auxSubEur : 0) : 0,
+    savings: show1 ? m.savingsEur : 0,
   }));
-  const total = report.house.totalEur + report.aux.totalEur;
+  const total =
+    (show1 ? report.house.totalEur : 0) + (show2 ? report.aux.totalEur : 0);
+  const viewLabel = withSub ? "abonnement inclus" : "énergie seule, hors abonnement";
   const fmtDate = (d: Date) =>
     d.toLocaleString("fr-FR", {
       timeZone: "Europe/Paris",
@@ -137,45 +149,67 @@ export default async function CostsPage({
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {PERIODS.map((x) => (
-          <Link
-            key={x.key}
-            href={href(x.key, withSub)}
-            className={
-              "btn text-xs " +
-              (x.key === period
-                ? "bg-emerald-900/50 text-emerald-100 border border-emerald-700"
-                : "btn-ghost")
-            }
-          >
-            {x.label}
-          </Link>
-        ))}
+      {/* Filtres : une seule ligne au-dessus des graphiques. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Seg
+          options={PERIODS.map((x) => ({
+            key: x.key,
+            label: x.label,
+            href: href({ p: x.key }),
+          }))}
+          active={period}
+        />
+        <Seg
+          options={[
+            { key: "all", label: "Tous réseaux", href: href({ n: "all" }) },
+            { key: "1", label: "Réseau 1", href: href({ n: "1" }) },
+            { key: "2", label: "Réseau 2", href: href({ n: "2" }) },
+          ]}
+          active={net}
+        />
+        <Seg
+          options={[
+            { key: "e", label: "Énergie seule", href: href({ ab: false }) },
+            { key: "a", label: "Avec abonnement", href: href({ ab: true }) },
+          ]}
+          active={withSub ? "a" : "e"}
+        />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {show1 && (
+          <SummaryCard
+            label={report.house.name}
+            value={eur(report.house.totalEur)}
+            hint={`${kwh(report.house.energyKWh)} · abo ${eur(report.house.subscriptionEur)}`}
+          />
+        )}
+        {show2 && (
+          <SummaryCard
+            label={report.aux.name}
+            value={eur(report.aux.totalEur)}
+            hint={
+              report.aux.hoursWithData === 0
+                ? "pas de mesure sur la période"
+                : `${kwh(report.aux.energyKWh)} · abo ${eur(report.aux.subscriptionEur)}`
+            }
+          />
+        )}
         <SummaryCard
-          label={report.house.name}
-          value={eur(report.house.totalEur)}
-          hint={`${kwh(report.house.energyKWh)} · abo ${eur(report.house.subscriptionEur)}`}
-        />
-        <SummaryCard
-          label={report.aux.name}
-          value={eur(report.aux.totalEur)}
+          label="Total"
+          value={eur(total)}
           hint={
-            report.aux.hoursWithData === 0
-              ? "pas de mesure sur la période"
-              : `${kwh(report.aux.energyKWh)} · abo ${eur(report.aux.subscriptionEur)}`
+            net === "all" ? "2 réseaux, abonnements inclus" : `réseau ${net}, abonnement inclus`
           }
         />
-        <SummaryCard label="Total" value={eur(total)} hint="2 réseaux, abonnements inclus" />
-        <SummaryCard
-          label="Économies solaire + batterie"
-          value={eur(report.savings.eur)}
-          hint={`${kwh(report.savings.kWh)} non achetés (réseau 1)`}
-          good
-        />
+        {show1 && (
+          <SummaryCard
+            label="Économies solaire + batterie"
+            value={eur(report.savings.eur)}
+            hint={`${kwh(report.savings.kWh)} non achetés (réseau 1)`}
+            good
+          />
+        )}
       </div>
 
       {report.unknownColorHours > 0 && (
@@ -193,10 +227,18 @@ export default async function CostsPage({
           <thead>
             <tr className="text-left text-xs text-zinc-500">
               <th className="py-1 pr-3 font-normal">Période</th>
-              <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>
-              <th className="py-1 pr-3 font-normal text-right">€</th>
-              <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>
-              <th className="py-1 font-normal text-right">€</th>
+              {show1 && (
+                <>
+                  <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>
+                  <th className="py-1 pr-3 font-normal text-right">€</th>
+                </>
+              )}
+              {show2 && (
+                <>
+                  <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>
+                  <th className="py-1 font-normal text-right">€</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="font-mono">
@@ -213,24 +255,40 @@ export default async function CostsPage({
                       </span>
                     </span>
                   </td>
-                  <SlotCells net={report.house} slot={s} />
-                  <SlotCells net={report.aux} slot={s} last />
+                  {show1 && <SlotCells net={report.house} slot={s} last={!show2} />}
+                  {show2 && <SlotCells net={report.aux} slot={s} last />}
                 </tr>
               );
             })}
             <tr className="border-t border-zinc-700 font-semibold">
               <td className="py-1.5 pr-3 font-sans">Abonnement</td>
-              <td />
-              <td className="py-1.5 pr-3 text-right">{eur(report.house.subscriptionEur)}</td>
-              <td />
-              <td className="py-1.5 text-right">{eur(report.aux.subscriptionEur)}</td>
+              {show1 && (
+                <>
+                  <td />
+                  <td className="py-1.5 pr-3 text-right">{eur(report.house.subscriptionEur)}</td>
+                </>
+              )}
+              {show2 && (
+                <>
+                  <td />
+                  <td className="py-1.5 text-right">{eur(report.aux.subscriptionEur)}</td>
+                </>
+              )}
             </tr>
             <tr className="border-t border-zinc-700 font-semibold">
               <td className="py-1.5 pr-3 font-sans">Total</td>
-              <td className="py-1.5 pr-3 text-right">{kwh(report.house.energyKWh)}</td>
-              <td className="py-1.5 pr-3 text-right">{eur(report.house.totalEur)}</td>
-              <td className="py-1.5 pr-3 text-right">{kwh(report.aux.energyKWh)}</td>
-              <td className="py-1.5 text-right">{eur(report.aux.totalEur)}</td>
+              {show1 && (
+                <>
+                  <td className="py-1.5 pr-3 text-right">{kwh(report.house.energyKWh)}</td>
+                  <td className="py-1.5 pr-3 text-right">{eur(report.house.totalEur)}</td>
+                </>
+              )}
+              {show2 && (
+                <>
+                  <td className="py-1.5 pr-3 text-right">{kwh(report.aux.energyKWh)}</td>
+                  <td className="py-1.5 text-right">{eur(report.aux.totalEur)}</td>
+                </>
+              )}
             </tr>
           </tbody>
         </table>
@@ -238,41 +296,20 @@ export default async function CostsPage({
 
       {report.days.length > 1 && (
         <div className="card overflow-x-auto">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-              Par jour ({withSub ? "abonnement inclus" : "énergie seule, hors abonnement"})
-            </div>
-            <div className="flex gap-1">
-              {[
-                { ab: false, label: "Énergie seule" },
-                { ab: true, label: "Avec abonnement" },
-              ].map((o) => (
-                <Link
-                  key={o.label}
-                  href={href(period, o.ab)}
-                  className={
-                    "btn text-xs " +
-                    (o.ab === withSub
-                      ? "bg-emerald-900/50 text-emerald-100 border border-emerald-700"
-                      : "btn-ghost")
-                  }
-                >
-                  {o.label}
-                </Link>
-              ))}
-            </div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 mb-3">
+            Par jour ({viewLabel})
           </div>
           <div className="mb-4">
-            <CostChart data={dailyPoints} showSub={withSub} />
+            <CostChart data={dailyPoints} showSub={withSub} show1={show1} show2={show2} />
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-zinc-500">
                 <th className="py-1 pr-3 font-normal">Jour</th>
-                <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>
-                <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>
-                <th className="py-1 pr-3 font-normal text-right">Total</th>
-                <th className="py-1 font-normal text-right">Économies</th>
+                {show1 && <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>}
+                {show2 && <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>}
+                {net === "all" && <th className="py-1 pr-3 font-normal text-right">Total</th>}
+                {show1 && <th className="py-1 font-normal text-right">Économies</th>}
               </tr>
             </thead>
             <tbody className="font-mono">
@@ -291,10 +328,14 @@ export default async function CostsPage({
                         {dd}/{mm}
                       </span>
                     </td>
-                    <td className="py-1.5 pr-3 text-right">{eur(r1)}</td>
-                    <td className="py-1.5 pr-3 text-right">{eur(r2)}</td>
-                    <td className="py-1.5 pr-3 text-right">{eur(r1 + r2)}</td>
-                    <td className="py-1.5 text-right text-emerald-300">{eur(d.savingsEur)}</td>
+                    {show1 && <td className="py-1.5 pr-3 text-right">{eur(r1)}</td>}
+                    {show2 && <td className="py-1.5 pr-3 text-right">{eur(r2)}</td>}
+                    {net === "all" && (
+                      <td className="py-1.5 pr-3 text-right">{eur(r1 + r2)}</td>
+                    )}
+                    {show1 && (
+                      <td className="py-1.5 text-right text-emerald-300">{eur(d.savingsEur)}</td>
+                    )}
                   </tr>
                 );
               })}
@@ -305,56 +346,42 @@ export default async function CostsPage({
 
       {monthlyPoints.length > 0 && (
         <div className="card overflow-x-auto">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-              Évolution mensuelle · 12 derniers mois (
-              {withSub ? "abonnement inclus" : "énergie seule"})
-            </div>
-            <div className="flex gap-1">
-              {[
-                { ab: false, label: "Énergie seule" },
-                { ab: true, label: "Avec abonnement" },
-              ].map((o) => (
-                <Link
-                  key={o.label}
-                  href={href(period, o.ab)}
-                  className={
-                    "btn text-xs " +
-                    (o.ab === withSub
-                      ? "bg-emerald-900/50 text-emerald-100 border border-emerald-700"
-                      : "btn-ghost")
-                  }
-                >
-                  {o.label}
-                </Link>
-              ))}
-            </div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 mb-3">
+            Évolution mensuelle · 12 derniers mois ({viewLabel})
           </div>
           <div className="mb-4">
-            <CostChart data={monthlyPoints} showSub={withSub} />
+            <CostChart data={monthlyPoints} showSub={withSub} show1={show1} show2={show2} />
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-zinc-500">
                 <th className="py-1 pr-3 font-normal">Mois</th>
-                <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>
-                <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>
-                <th className="py-1 pr-3 font-normal text-right">Total</th>
-                <th className="py-1 font-normal text-right">Économies</th>
+                {show1 && <th className="py-1 pr-3 font-normal text-right">Réseau 1</th>}
+                {show2 && <th className="py-1 pr-3 font-normal text-right">Réseau 2</th>}
+                {net === "all" && <th className="py-1 pr-3 font-normal text-right">Total</th>}
+                {show1 && <th className="py-1 font-normal text-right">Économies</th>}
               </tr>
             </thead>
             <tbody className="font-mono">
               {monthlyPoints.map((m, i) => (
                 <tr key={monthly[i]!.month} className="border-t border-zinc-800/70">
                   <td className="py-1.5 pr-3 font-sans capitalize">{m.label}</td>
-                  <td className="py-1.5 pr-3 text-right">
-                    {eur(m.r1 + (withSub ? monthly[i]!.houseSubEur : 0))}
-                  </td>
-                  <td className="py-1.5 pr-3 text-right">
-                    {eur(m.r2 + (withSub ? monthly[i]!.auxSubEur : 0))}
-                  </td>
-                  <td className="py-1.5 pr-3 text-right">{eur(m.r1 + m.r2 + m.sub)}</td>
-                  <td className="py-1.5 text-right text-emerald-300">{eur(m.savings)}</td>
+                  {show1 && (
+                    <td className="py-1.5 pr-3 text-right">
+                      {eur(m.r1 + (withSub ? monthly[i]!.houseSubEur : 0))}
+                    </td>
+                  )}
+                  {show2 && (
+                    <td className="py-1.5 pr-3 text-right">
+                      {eur(m.r2 + (withSub ? monthly[i]!.auxSubEur : 0))}
+                    </td>
+                  )}
+                  {net === "all" && (
+                    <td className="py-1.5 pr-3 text-right">{eur(m.r1 + m.r2 + m.sub)}</td>
+                  )}
+                  {show1 && (
+                    <td className="py-1.5 text-right text-emerald-300">{eur(m.savings)}</td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -374,6 +401,36 @@ export default async function CostsPage({
         <ContractForm contract={contracts.HOUSE} />
         <ContractForm contract={contracts.AUX} />
       </div>
+    </div>
+  );
+}
+
+type NetFilter = "all" | "1" | "2";
+
+/** Groupe de boutons segmentés (filtre par lien, état dans l'URL). */
+function Seg({
+  options,
+  active,
+}: {
+  options: Array<{ key: string; label: string; href: string }>;
+  active: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map((o) => (
+        <Link
+          key={o.key}
+          href={o.href}
+          className={
+            "btn text-xs " +
+            (o.key === active
+              ? "bg-emerald-900/50 text-emerald-100 border border-emerald-700"
+              : "btn-ghost")
+          }
+        >
+          {o.label}
+        </Link>
+      ))}
     </div>
   );
 }
