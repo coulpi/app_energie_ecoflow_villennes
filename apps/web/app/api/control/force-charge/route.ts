@@ -60,8 +60,19 @@ interface Body {
   surplusChargeEnabled?: boolean;
 }
 
+interface CurrentDaily {
+  forceChargeDailyTime: string;
+  forceChargeDailySoc: number;
+  forceChargeDailyWatts: number;
+  forceChargeSoc: number | null;
+  forceChargeWatts: number;
+}
+
 /** Met à jour le programme quotidien / la charge surplus. null si rien à faire. */
-function settingsUpdate(body: Body): Record<string, unknown> | null | "invalid_time" {
+function settingsUpdate(
+  body: Body,
+  cur: CurrentDaily | null,
+): Record<string, unknown> | null | "invalid_time" {
   const data: Record<string, unknown> = {};
   if (typeof body.surplusChargeEnabled === "boolean") {
     data.surplusChargeEnabled = body.surplusChargeEnabled;
@@ -73,15 +84,29 @@ function settingsUpdate(body: Body): Record<string, unknown> | null | "invalid_t
       const m = /^(\d{1,2}):(\d{2})$/.exec(d.time.trim());
       const [, hh = "", mm = ""] = m ?? [];
       if (!m || Number(hh) > 23 || Number(mm) > 59) return "invalid_time";
-      data.forceChargeDailyTime = `${hh.padStart(2, "0")}:${mm}`;
-      // Horaire modifié → autorise un déclenchement dès aujourd'hui.
-      data.forceChargeDailyLastDate = null;
+      const time = `${hh.padStart(2, "0")}:${mm}`;
+      data.forceChargeDailyTime = time;
+      // Horaire réellement modifié → autorise un déclenchement dès
+      // aujourd'hui (l'UI renvoie l'horaire à chaque enregistrement).
+      if (time !== cur?.forceChargeDailyTime) data.forceChargeDailyLastDate = null;
     }
     if (typeof d.soc === "number" && Number.isFinite(d.soc)) {
       data.forceChargeDailySoc = Math.max(5, Math.min(100, Math.round(d.soc)));
     }
     if (typeof d.watts === "number" && Number.isFinite(d.watts)) {
       data.forceChargeDailyWatts = Math.max(100, Math.min(2000, Math.round(d.watts)));
+    }
+    // Charge en cours lancée par le programme (mêmes cible et puissance) :
+    // la nouvelle cible / puissance s'applique tout de suite, pas seulement
+    // au prochain déclenchement.
+    const fromDaily =
+      cur !== null &&
+      cur.forceChargeSoc !== null &&
+      cur.forceChargeSoc === cur.forceChargeDailySoc &&
+      cur.forceChargeWatts === cur.forceChargeDailyWatts;
+    if (fromDaily) {
+      if (data.forceChargeDailyWatts !== undefined) data.forceChargeWatts = data.forceChargeDailyWatts;
+      if (data.forceChargeDailySoc !== undefined) data.forceChargeSoc = data.forceChargeDailySoc;
     }
   }
   return Object.keys(data).length > 0 ? data : null;
@@ -97,7 +122,17 @@ export async function POST(req: Request) {
 
   // Réglages seuls (programme quotidien / charge surplus).
   if (body.daily !== undefined || body.surplusChargeEnabled !== undefined) {
-    const data = settingsUpdate(body);
+    const cur = (await prisma.controlState.findUnique({
+      where: { key: "default" },
+      select: {
+        forceChargeDailyTime: true,
+        forceChargeDailySoc: true,
+        forceChargeDailyWatts: true,
+        forceChargeSoc: true,
+        forceChargeWatts: true,
+      } as never,
+    })) as CurrentDaily | null;
+    const data = settingsUpdate(body, cur);
     if (data === "invalid_time") {
       return NextResponse.json({ error: "invalid_time" }, { status: 400 });
     }
