@@ -33,7 +33,10 @@ async function circuitsToday(from: Date) {
   });
   const wh = new Map(rows.map((r) => [r.deviceId, r._sum.consoWh ?? 0]));
   return devices.map((d) => ({
-    name: d.role === "BATTERY_AC_SWITCH" ? "Charge batterie" : d.name.replace(/^Prise\s+/i, ""),
+    name:
+      d.role === "BATTERY_AC_SWITCH"
+        ? "Charge batterie"
+        : d.name.replace(/^Prise\s+/i, "").replace(/^./, (c) => c.toUpperCase()),
     network: (d.role === "BATTERY_AC_SWITCH" || isNetwork2(d.name) ? 2 : 1) as 1 | 2,
     wh: wh.get(d.id) ?? 0,
     car: /voiture|ev\b|car/i.test(d.name),
