@@ -222,12 +222,33 @@ let privateSetupInFlight = false;
 // une panne durable (cert expiré, API privée injoignable au boot, etc.).
 const PRIVATE_STALE_TIMEOUT_MS = 10 * 60_000;
 
+// Puissance de charge AC lente réellement configurée dans la batterie
+// (`inv.cfgSlowChgWatts`, poussée dans les broadcasts MQTT). Permet de
+// vérifier qu'une commande setChargeWatts a bien été appliquée : vu un
+// 1500 W envoyé juste après l'allumage de la prise AC, perdu (batterie
+// encore en veille), la Delta Max restant à 100 W.
+let reportedSlowChg: { watts: number; atMs: number } | null = null;
+
+export function getReportedSlowChgWatts(maxAgeMs = 5 * 60_000): number | null {
+  if (!reportedSlowChg || Date.now() - reportedSlowChg.atMs > maxAgeMs) return null;
+  return reportedSlowChg.watts;
+}
+
+function captureSlowChg(payload: unknown): void {
+  const p = payload as { params?: Record<string, unknown> } & Record<string, unknown>;
+  const v = p?.params?.["inv.cfgSlowChgWatts"] ?? p?.["inv.cfgSlowChgWatts"];
+  if (typeof v === "number" && Number.isFinite(v)) {
+    reportedSlowChg = { watts: v, atMs: Date.now() };
+  }
+}
+
 async function handlePrivateMessage(
   batteries: Battery[],
   sn: string,
   payload: unknown,
 ): Promise<void> {
   pushRecv(sn, payload);
+  captureSlowChg(payload);
   try {
     const device = batteries.find((b) => b.externalId === sn);
     if (!device) return;

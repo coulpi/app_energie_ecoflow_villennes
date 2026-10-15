@@ -20,8 +20,12 @@ import { env } from "../env.js";
 import { log } from "../log.js";
 import { buildSnapshot } from "./engine.js";
 import { applyAction } from "./actions.js";
+import { getReportedSlowChgWatts } from "../pollers/ecoflow.js";
 
 const POWER_DEAD_BAND_W = 25;
+// Renvoi d'une consigne de charge non appliquée : au plus 1 fois / minute.
+const CHARGE_RESEND_MIN_MS = 60_000;
+let lastChargeResendMs = 0;
 const SURPLUS_HYST_W = 50;
 // Rampe : variation max de la puissance de charge entre 2 ticks. À 30 s
 // de polling, 100 W/tick ≈ +200 W/min, monte de 0 à 800 W en ~4 min.
@@ -133,7 +137,23 @@ async function setSwitch(on: boolean): Promise<void> {
 
 async function setCharge(watts: number): Promise<void> {
   const w = Math.max(0, Math.round(watts));
-  if (last.chargeW !== null && Math.abs(w - last.chargeW) < POWER_DEAD_BAND_W) return;
+  if (last.chargeW !== null && Math.abs(w - last.chargeW) < POWER_DEAD_BAND_W) {
+    // Déjà commandé : on vérifie que la batterie l'a bien appliqué. Une
+    // commande envoyée pendant que la batterie sort de veille (prise AC
+    // tout juste allumée) peut être perdue ; sans ce contrôle elle n'était
+    // jamais renvoyée (charge bloquée à 100 W au lieu de 1500 W).
+    const reported = getReportedSlowChgWatts();
+    const expected = Math.max(100, Math.min(2000, w));
+    if (
+      reported === null ||
+      Math.abs(reported - expected) < POWER_DEAD_BAND_W ||
+      Date.now() - lastChargeResendMs < CHARGE_RESEND_MIN_MS
+    ) {
+      return;
+    }
+    lastChargeResendMs = Date.now();
+    log.warn("follow-load: charge non appliquée, renvoi", { expected, reported });
+  }
   await applyAction(
     { action: "ecoflow.setChargeWatts", params: { watts: w } },
     { snapshot: await buildSnapshot() },
