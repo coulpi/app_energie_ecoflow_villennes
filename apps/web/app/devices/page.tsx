@@ -16,7 +16,7 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "BATTERY", label: "Batterie" },
   { value: "SOLAR_INVERTER", label: "Onduleur solaire (par panneau)" },
   { value: "APPLIANCE", label: "Appareil mesuré (jacuzzi, voiture…)" },
-  { value: "AUX_NETWORK_METER", label: "Réseau 2 (piscine, jacuzzi, voiture)" },
+  { value: "AUX_NETWORK_METER", label: "Réseau 2 (piscine, jacuzzi, PAC, voiture)" },
 ];
 
 /**

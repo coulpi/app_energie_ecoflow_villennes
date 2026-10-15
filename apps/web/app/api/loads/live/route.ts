@@ -11,9 +11,12 @@
 //  - delta = current - base. Pour chaque profil, si
 //    |delta - expectedW| <= toleranceW → ON. Si plusieurs matchent,
 //    on retient celui dont l'écart est le plus petit.
+//  - Les profils du réseau 2 (piscine, jacuzzi, PAC, voiture) sont
+//    expliqués par le compteur réseau 2, pas par la conso maison.
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isNetwork2 } from "@/lib/networks";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +101,10 @@ export async function GET() {
     on: boolean;
     measuredW: number;
   }> = [];
-  let measuredSubtotalW = 0;
+  // Sous-totaux mesurés par réseau : chaque réseau a son propre compteur,
+  // on n'y retranche que les prises qui y sont branchées.
+  let measuredR1W = 0;
+  let measuredR2W = 0;
   for (const p of allProfiles) {
     const mid = (p as { measuredDeviceId: string | null }).measuredDeviceId;
     if (!mid) continue;
@@ -113,247 +119,51 @@ export async function GET() {
       r.switchOn === true || (r.powerW !== null && r.powerW >= onThr);
     const w = r.powerW ?? 0;
     measuredOutputs.push({ profile: p, on: isOn, measuredW: isOn ? w : 0 });
-    if (isOn) measuredSubtotalW += w;
+    if (isOn) {
+      if (isNetwork2(`${p.id} ${p.name}`)) measuredR2W += w;
+      else measuredR1W += w;
+    }
   }
   const measuredProfileIds = new Set(measuredOutputs.map((m) => m.profile.id));
-  // Profils restants : combinatoire + filtre fenêtre horaire.
+  // Profils restants (à deviner) : filtre fenêtre horaire, puis répartis
+  // par réseau. Ceux du réseau 2 (pompe piscine, PAC…) s'expliquent par
+  // le compteur réseau 2, pas par la conso maison.
   const profiles = allProfiles
     .filter((p) => !measuredProfileIds.has(p.id))
     .filter((p) => inActiveWindow(p.activeStartHour, p.activeEndHour));
+  const profilesR1 = profiles.filter((p) => !isNetwork2(`${p.id} ${p.name}`));
+  const profilesR2 = profiles.filter((p) => isNetwork2(`${p.id} ${p.name}`));
 
-  if (!prodDev || !gridDev) {
-    return NextResponse.json({
-      currentW: null,
-      baseW: null,
-      deltaW: null,
-      profiles: profiles.map((p) => ({
-        id: p.id,
-        name: p.name,
-        expectedW: p.expectedPowerW,
-        currentlyOn: false,
-        confidence: 0,
-      })),
-    });
-  }
-
-  const since = new Date(Date.now() - BASE_MIN * 60_000);
-  const [prodRows, gridRows] = await Promise.all([
-    prisma.reading.findMany({
-      where: { deviceId: prodDev.id, ts: { gte: since }, powerW: { not: null } },
-      orderBy: { ts: "asc" },
-      select: { ts: true, powerW: true },
-    }),
-    prisma.reading.findMany({
-      where: { deviceId: gridDev.id, ts: { gte: since }, powerW: { not: null } },
-      orderBy: { ts: "asc" },
-      select: { ts: true, powerW: true },
-    }),
-  ]);
-
-  // Pour la détection d'appareils on prend la conso "vue par le compteur"
-  // = prod + grid (sans le PowerStream). La baseline est apprise quand le
-  // PS n'injecte pas encore, donc l'ajouter fausserait le delta de la
-  // valeur d'injection PS et masquerait les appareils détectables.
-  function bucket(rows: { ts: Date; powerW: number | null }[]) {
-    const map = new Map<number, number[]>();
-    for (const r of rows) {
-      if (r.powerW === null) continue;
-      const key = Math.floor(r.ts.getTime() / 60_000);
-      const a = map.get(key) ?? [];
-      a.push(r.powerW);
-      map.set(key, a);
-    }
-    const out = new Map<number, number>();
-    for (const [k, vs] of map) out.set(k, vs.reduce((a, b) => a + b, 0) / vs.length);
-    return out;
-  }
-  const prodB = bucket(prodRows);
-  const gridB = bucket(gridRows);
-  // Pour chaque minute on calcule conso = prod + grid (les deux signés).
-  const consoSeries: { tsMin: number; w: number }[] = [];
-  for (const [k, p] of prodB) {
-    const g = gridB.get(k);
-    if (g === undefined) continue;
-    consoSeries.push({ tsMin: k, w: Math.max(0, p + g) });
-  }
-  consoSeries.sort((a, b) => a.tsMin - b.tsMin);
-  const powers = consoSeries.map((x) => x.w).filter((w) => w > 0);
-
-  const recentMinKey = Math.floor((Date.now() - RECENT_MIN * 60_000) / 60_000);
-  const recents = consoSeries
-    .filter((x) => x.tsMin >= recentMinKey)
-    .map((x) => x.w);
-  const currentW =
-    recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
-
-  // 2 baselines apprises sur 7 jours :
-  //  - nocturne : mediane 2h-5h du matin (rien ne tourne)
-  //  - diurne   : 25e percentile 8h-22h (capture les moments calmes
-  //               de journee, hors gros appareils typiquement actifs)
-  // On choisit selon l'heure courante : nocturne en [22-6], diurne sinon.
-  let baseW: number | null = null;
-  const sinceWeek = new Date(Date.now() - 7 * 24 * 3_600_000);
-  const [prodWeek, gridWeek] = await Promise.all([
-    prisma.reading.findMany({
-      where: { deviceId: prodDev.id, ts: { gte: sinceWeek }, powerW: { not: null } },
-      select: { ts: true, powerW: true },
-    }),
-    prisma.reading.findMany({
-      where: { deviceId: gridDev.id, ts: { gte: sinceWeek }, powerW: { not: null } },
-      select: { ts: true, powerW: true },
-    }),
-  ]);
-
-  // Buckets par minute, séparés en NIGHT (2-5h) et DAY (8-22h).
-  type Bucket = { p: number[]; g: number[] };
-  const nightBuckets = new Map<number, Bucket>();
-  const dayBuckets = new Map<number, Bucket>();
-  const accumulate = (
-    map: Map<number, Bucket>,
-    rows: typeof prodWeek,
-    field: "p" | "g",
-    hourFilter: (h: number) => boolean,
-  ) => {
-    for (const r of rows) {
-      if (r.powerW === null) continue;
-      if (!hourFilter(r.ts.getHours())) continue;
-      const k = Math.floor(r.ts.getTime() / 60_000);
-      const b = map.get(k) ?? { p: [], g: [] };
-      b[field].push(r.powerW);
-      map.set(k, b);
-    }
-  };
-  const isNight = (h: number) => h >= 2 && h < 5;
-  const isDay = (h: number) => h >= 8 && h < 22;
-  accumulate(nightBuckets, prodWeek, "p", isNight);
-  accumulate(nightBuckets, gridWeek, "g", isNight);
-  accumulate(dayBuckets, prodWeek, "p", isDay);
-  accumulate(dayBuckets, gridWeek, "g", isDay);
-
-  const seriesFromBuckets = (m: Map<number, Bucket>): number[] => {
-    const out: number[] = [];
-    for (const [, b] of m) {
-      if (b.p.length === 0 || b.g.length === 0) continue;
-      const p = b.p.reduce((a, x) => a + x, 0) / b.p.length;
-      const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
-      out.push(Math.max(0, p + g));
-    }
-    return out;
-  };
-  const nightConsos = seriesFromBuckets(nightBuckets);
-  const dayConsos = seriesFromBuckets(dayBuckets);
-  const nightBase = nightConsos.length >= 30 ? median(nightConsos) : null;
-  // p35 sur la fenêtre 8-22h : compromis entre p25 (trop bas, capte
-  // surtout les moments creux du matin) et p50 (qui inclut la pompe
-  // si elle tourne >50% du temps). Cible empirique : 1000-1100 W.
-  // L'utilisateur peut toujours forcer via loadsBaselineW.
-  const dayBase = dayConsos.length >= 30 ? percentile(dayConsos, 0.35) : null;
-  const currentHour = new Date().getHours();
-  const useNight = currentHour < 6 || currentHour >= 22;
-  const autoBase = useNight ? nightBase ?? dayBase : dayBase ?? nightBase;
-  // Override manuel : si l'utilisateur a fixé loadsBaselineW dans
-  // ControlState, on l'utilise tel quel (court-circuite la détection auto).
+  // ── Réseau 1 : conso bilanée (prod + grid) vs baseline apprise ──
+  const r1 = prodDev && gridDev ? await network1Delta(prodDev.id, gridDev.id) : null;
   const ctrl = (await prisma.controlState.findUnique({
     where: { key: "default" },
   })) as { loadsBaselineW?: number | null } | null;
   const override = ctrl?.loadsBaselineW;
-  if (typeof override === "number" && override > 0) {
-    baseW = override;
-  } else if (autoBase !== null) {
-    baseW = Math.max(400, Math.min(2000, autoBase));
-  } else if (powers.length >= 10) {
-    // Pas assez de données apprises → fallback sur la fenêtre courte.
-    const lo = percentile(powers, 0.1);
-    const hi = percentile(powers, 0.7);
-    const filtered = powers.filter((p) => p >= lo && p <= hi);
-    baseW = Math.max(400, Math.min(1500, median(filtered)));
-  } else {
-    baseW = 700;
+  let baseW: number | null = null;
+  if (r1) {
+    if (typeof override === "number" && override > 0) baseW = override;
+    else if (r1.autoBase !== null) baseW = Math.max(400, Math.min(2000, r1.autoBase));
+    else if (r1.powers.length >= 10) {
+      // Pas assez de données apprises → fallback sur la fenêtre courte.
+      const lo = percentile(r1.powers, 0.1);
+      const hi = percentile(r1.powers, 0.7);
+      const filtered = r1.powers.filter((p) => p >= lo && p <= hi);
+      baseW = Math.max(400, Math.min(1500, median(filtered)));
+    } else baseW = 700;
   }
-
+  const currentW = r1?.currentW ?? null;
   const deltaW = currentW !== null && baseW !== null ? currentW - baseW : null;
-  // Delta restant à expliquer après avoir retiré ce qui est déjà
-  // attribué aux prises mesurées (jacuzzi, voiture, etc.).
-  const deltaResidualW =
-    deltaW !== null ? deltaW - measuredSubtotalW : null;
+  // Delta restant à expliquer après les prises mesurées du réseau 1.
+  const residualR1 = deltaW !== null ? deltaW - measuredR1W : null;
 
-  // Détection combinatoire : on cherche le sous-ensemble de profils
-  // dont la somme des expectedPowerW est la plus proche de deltaW.
-  // Évite que jacuzzi (1900) + pompe (500) = 2400 fasse aussi matcher
-  // la voiture électrique (2400) parce que le code regardait chaque
-  // profil indépendamment. N profils → 2^N combinaisons (max ~1024
-  // pour 10 profils, négligeable).
-  let bestMask = 0;
-  let bestDistance = Infinity;
-  let bestPopcount = 0;
-  if (deltaResidualW !== null && profiles.length > 0 && profiles.length <= 16) {
-    const total = 1 << profiles.length;
-    // Si le résiduel est clairement non négligeable (>100 W), le subset
-    // vide ne doit PAS gagner par défaut : un appareil non mesuré est
-    // probablement actif. On commence donc l'énumération à mask=1
-    // (sauf si résiduel proche de 0 où le vide est la bonne réponse).
-    const skipEmpty = deltaResidualW > 100;
-    const startMask = skipEmpty ? 1 : 0;
-    for (let mask = startMask; mask < total; mask++) {
-      let sum = 0;
-      let popcount = 0;
-      for (let i = 0; i < profiles.length; i++) {
-        if (mask & (1 << i)) {
-          sum += profiles[i]!.expectedPowerW;
-          popcount++;
-        }
-      }
-      const dist = Math.abs(deltaResidualW - sum);
-      // Tiebreaker à distance égale : préfère le sous-ensemble avec
-      // PLUS d'appareils. Si {voiture 2400} et {jacuzzi+pompe 2400}
-      // matchent tous les deux à dist=0, on retient jacuzzi+pompe :
-      // une explication composée est plus probable qu'un appareil
-      // unique de même puissance qui ne tourne typiquement pas en
-      // même temps (cf. plages horaires différentes).
-      if (
-        dist < bestDistance ||
-        (dist === bestDistance && popcount > bestPopcount)
-      ) {
-        bestDistance = dist;
-        bestMask = mask;
-        bestPopcount = popcount;
-      }
-    }
-  }
-  // Tolérance globale du sous-ensemble : somme des tolérances des
-  // profils retenus, plancher 100 W. Si l'écart dépasse, on considère
-  // qu'aucun appareil ne matche bien (delta inexpliqué).
-  let bestSubsetTolerance = 100;
-  for (let i = 0; i < profiles.length; i++) {
-    if (bestMask & (1 << i)) bestSubsetTolerance += profiles[i]!.toleranceW;
-  }
-  const subsetMatches = bestDistance <= bestSubsetTolerance;
+  // ── Réseau 2 : compteur dédié − plancher − prises mesurées − charge batterie ──
+  const residualR2 = profilesR2.length > 0 ? await network2Residual(measuredR2W) : null;
 
-  const heuristicOut = profiles.map((p, i) => {
-    if (deltaResidualW === null) {
-      return {
-        id: p.id,
-        name: p.name,
-        expectedW: p.expectedPowerW,
-        currentlyOn: false,
-        confidence: 0,
-        source: "heuristic" as const,
-      };
-    }
-    const inSubset = (bestMask & (1 << i)) !== 0 && subsetMatches;
-    const distance = Math.abs(deltaResidualW - p.expectedPowerW);
-    const confidence = inSubset
-      ? Math.max(0, 1 - bestDistance / Math.max(bestSubsetTolerance, 1))
-      : Math.max(0, 1 - distance / Math.max(p.toleranceW, 1)) * 0.3;
-    return {
-      id: p.id,
-      name: p.name,
-      expectedW: p.expectedPowerW,
-      currentlyOn: inSubset,
-      confidence,
-      source: "heuristic" as const,
-    };
-  });
+  const heuristicOut = [
+    ...explain(profilesR1, residualR1),
+    ...explain(profilesR2, residualR2),
+  ];
   const measuredOut = measuredOutputs.map((m) => ({
     id: m.profile.id,
     name: m.profile.name,
@@ -387,12 +197,228 @@ export async function GET() {
       currentW: currentW !== null ? Math.round(currentW) : null,
       baseW: baseW !== null ? Math.round(baseW) : null,
       deltaW: deltaW !== null ? Math.round(deltaW) : null,
+      residualR2W: residualR2 !== null ? Math.round(residualR2) : null,
       baselineOverride: typeof override === "number" ? override : null,
-      baselineNightW: nightBase !== null ? Math.round(nightBase) : null,
-      baselineDayW: dayBase !== null ? Math.round(dayBase) : null,
-      baselineUsed: useNight ? "night" : "day",
+      baselineNightW: r1?.nightBase !== null && r1?.nightBase !== undefined ? Math.round(r1.nightBase) : null,
+      baselineDayW: r1?.dayBase !== null && r1?.dayBase !== undefined ? Math.round(r1.dayBase) : null,
+      baselineUsed: r1?.useNight ? "night" : "day",
       profiles: profilesOut,
     },
     { headers: { "Cache-Control": "no-store" } },
   );
+}
+
+type Profile = {
+  id: string;
+  name: string;
+  expectedPowerW: number;
+  toleranceW: number;
+};
+
+/**
+ * Détection combinatoire : sous-ensemble de profils dont la somme des
+ * expectedPowerW est la plus proche du résiduel. Évite que jacuzzi (1900)
+ * + pompe (500) = 2400 fasse aussi matcher la voiture (2400) en regardant
+ * chaque profil indépendamment. N profils → 2^N combinaisons (N ≤ 16).
+ */
+function explain(profiles: Profile[], residual: number | null) {
+  let bestMask = 0;
+  let bestDistance = Infinity;
+  let bestPopcount = 0;
+  if (residual !== null && profiles.length > 0 && profiles.length <= 16) {
+    const total = 1 << profiles.length;
+    // Résiduel clairement non négligeable (>100 W) : le sous-ensemble vide
+    // ne doit PAS gagner par défaut, un appareil non mesuré est actif.
+    const startMask = residual > 100 ? 1 : 0;
+    for (let mask = startMask; mask < total; mask++) {
+      let sum = 0;
+      let popcount = 0;
+      for (let i = 0; i < profiles.length; i++) {
+        if (mask & (1 << i)) {
+          sum += profiles[i]!.expectedPowerW;
+          popcount++;
+        }
+      }
+      const dist = Math.abs(residual - sum);
+      // À distance égale, préfère le sous-ensemble avec PLUS d'appareils
+      // (une explication composée est plus probable).
+      if (dist < bestDistance || (dist === bestDistance && popcount > bestPopcount)) {
+        bestDistance = dist;
+        bestMask = mask;
+        bestPopcount = popcount;
+      }
+    }
+  }
+  // Tolérance du sous-ensemble : somme des tolérances, plancher 100 W.
+  // Au-delà, aucun appareil ne matche bien (delta inexpliqué).
+  let tolerance = 100;
+  for (let i = 0; i < profiles.length; i++) {
+    if (bestMask & (1 << i)) tolerance += profiles[i]!.toleranceW;
+  }
+  const matches = bestDistance <= tolerance;
+  return profiles.map((p, i) => {
+    if (residual === null) {
+      return {
+        id: p.id,
+        name: p.name,
+        expectedW: p.expectedPowerW,
+        currentlyOn: false,
+        confidence: 0,
+        source: "heuristic" as const,
+      };
+    }
+    const inSubset = (bestMask & (1 << i)) !== 0 && matches;
+    const distance = Math.abs(residual - p.expectedPowerW);
+    const confidence = inSubset
+      ? Math.max(0, 1 - bestDistance / Math.max(tolerance, 1))
+      : Math.max(0, 1 - distance / Math.max(p.toleranceW, 1)) * 0.3;
+    return {
+      id: p.id,
+      name: p.name,
+      expectedW: p.expectedPowerW,
+      currentlyOn: inSubset,
+      confidence,
+      source: "heuristic" as const,
+    };
+  });
+}
+
+/**
+ * Réseau 1 : conso « vue par le compteur » = prod + grid (sans le
+ * PowerStream : la baseline est apprise sans injection), moyenne des
+ * 2 dernières minutes, et 2 baselines apprises sur 7 jours :
+ *  - nocturne : médiane 2h-5h (rien ne tourne) ;
+ *  - diurne   : 35e percentile 8h-22h (compromis entre p25, trop bas, et
+ *    p50 qui inclut les appareils qui tournent souvent).
+ */
+async function network1Delta(prodId: string, gridId: string) {
+  const since = new Date(Date.now() - BASE_MIN * 60_000);
+  const [prodRows, gridRows] = await Promise.all([
+    prisma.reading.findMany({
+      where: { deviceId: prodId, ts: { gte: since }, powerW: { not: null } },
+      orderBy: { ts: "asc" },
+      select: { ts: true, powerW: true },
+    }),
+    prisma.reading.findMany({
+      where: { deviceId: gridId, ts: { gte: since }, powerW: { not: null } },
+      orderBy: { ts: "asc" },
+      select: { ts: true, powerW: true },
+    }),
+  ]);
+  function bucket(rows: { ts: Date; powerW: number | null }[]) {
+    const map = new Map<number, number[]>();
+    for (const r of rows) {
+      if (r.powerW === null) continue;
+      const key = Math.floor(r.ts.getTime() / 60_000);
+      const a = map.get(key) ?? [];
+      a.push(r.powerW);
+      map.set(key, a);
+    }
+    const out = new Map<number, number>();
+    for (const [k, vs] of map) out.set(k, vs.reduce((a, b) => a + b, 0) / vs.length);
+    return out;
+  }
+  const prodB = bucket(prodRows);
+  const gridB = bucket(gridRows);
+  const consoSeries: { tsMin: number; w: number }[] = [];
+  for (const [k, p] of prodB) {
+    const g = gridB.get(k);
+    if (g === undefined) continue;
+    consoSeries.push({ tsMin: k, w: Math.max(0, p + g) });
+  }
+  consoSeries.sort((a, b) => a.tsMin - b.tsMin);
+  const powers = consoSeries.map((x) => x.w).filter((w) => w > 0);
+  const recentMinKey = Math.floor((Date.now() - RECENT_MIN * 60_000) / 60_000);
+  const recents = consoSeries.filter((x) => x.tsMin >= recentMinKey).map((x) => x.w);
+  const currentW = recents.length > 0 ? recents.reduce((a, b) => a + b, 0) / recents.length : null;
+
+  const sinceWeek = new Date(Date.now() - 7 * 24 * 3_600_000);
+  const [prodWeek, gridWeek] = await Promise.all([
+    prisma.reading.findMany({
+      where: { deviceId: prodId, ts: { gte: sinceWeek }, powerW: { not: null } },
+      select: { ts: true, powerW: true },
+    }),
+    prisma.reading.findMany({
+      where: { deviceId: gridId, ts: { gte: sinceWeek }, powerW: { not: null } },
+      select: { ts: true, powerW: true },
+    }),
+  ]);
+  type Bucket = { p: number[]; g: number[] };
+  const nightBuckets = new Map<number, Bucket>();
+  const dayBuckets = new Map<number, Bucket>();
+  const accumulate = (
+    map: Map<number, Bucket>,
+    rows: typeof prodWeek,
+    field: "p" | "g",
+    hourFilter: (h: number) => boolean,
+  ) => {
+    for (const r of rows) {
+      if (r.powerW === null) continue;
+      if (!hourFilter(r.ts.getHours())) continue;
+      const k = Math.floor(r.ts.getTime() / 60_000);
+      const b = map.get(k) ?? { p: [], g: [] };
+      b[field].push(r.powerW);
+      map.set(k, b);
+    }
+  };
+  const isNight = (h: number) => h >= 2 && h < 5;
+  const isDay = (h: number) => h >= 8 && h < 22;
+  accumulate(nightBuckets, prodWeek, "p", isNight);
+  accumulate(nightBuckets, gridWeek, "g", isNight);
+  accumulate(dayBuckets, prodWeek, "p", isDay);
+  accumulate(dayBuckets, gridWeek, "g", isDay);
+  const seriesFromBuckets = (m: Map<number, Bucket>): number[] => {
+    const out: number[] = [];
+    for (const [, b] of m) {
+      if (b.p.length === 0 || b.g.length === 0) continue;
+      const p = b.p.reduce((a, x) => a + x, 0) / b.p.length;
+      const g = b.g.reduce((a, x) => a + x, 0) / b.g.length;
+      out.push(Math.max(0, p + g));
+    }
+    return out;
+  };
+  const nightConsos = seriesFromBuckets(nightBuckets);
+  const dayConsos = seriesFromBuckets(dayBuckets);
+  const nightBase = nightConsos.length >= 30 ? median(nightConsos) : null;
+  const dayBase = dayConsos.length >= 30 ? percentile(dayConsos, 0.35) : null;
+  const currentHour = new Date().getHours();
+  const useNight = currentHour < 6 || currentHour >= 22;
+  const autoBase = useNight ? nightBase ?? dayBase : dayBase ?? nightBase;
+  return { currentW, powers, nightBase, dayBase, useNight, autoBase };
+}
+
+/**
+ * Réseau 2 : puissance actuelle du compteur dédié (moyenne 2 min), moins
+ * son plancher (10e percentile sur 24 h, borné à 300 W), les prises
+ * mesurées du réseau 2 (jacuzzi, voiture…) et la charge batterie (prise
+ * AC IN sur ce réseau). Ce qui reste s'explique par les appareils non
+ * mesurés du réseau 2 (pompe piscine, PAC…). null si pas de compteur.
+ */
+async function network2Residual(measuredR2W: number): Promise<number | null> {
+  const devices = await prisma.device.findMany({
+    where: {
+      enabled: true,
+      role: { in: ["AUX_NETWORK_METER", "BATTERY_AC_SWITCH"] as never },
+    },
+    select: { id: true, role: true },
+  });
+  const auxIds = devices.filter((d) => d.role === "AUX_NETWORK_METER").map((d) => d.id);
+  if (auxIds.length === 0) return null;
+  const plugIds = devices.filter((d) => d.role === "BATTERY_AC_SWITCH").map((d) => d.id);
+  const since = new Date(Date.now() - 24 * 3_600_000);
+  const recentSince = Date.now() - RECENT_MIN * 60_000;
+  const rows = await prisma.reading.findMany({
+    where: { deviceId: { in: [...auxIds, ...plugIds] }, ts: { gte: since }, powerW: { not: null } },
+    select: { deviceId: true, ts: true, powerW: true },
+  });
+  const auxAll = rows.filter((r) => auxIds.includes(r.deviceId)).map((r) => Math.max(0, r.powerW!));
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const auxNow = avg(
+    rows.filter((r) => auxIds.includes(r.deviceId) && r.ts.getTime() >= recentSince).map((r) => Math.max(0, r.powerW!)),
+  );
+  if (auxNow === null) return null;
+  const plugNow =
+    avg(rows.filter((r) => plugIds.includes(r.deviceId) && r.ts.getTime() >= recentSince).map((r) => Math.max(0, r.powerW!))) ?? 0;
+  const floor = Math.min(300, percentile(auxAll, 0.1));
+  return auxNow - floor - measuredR2W - plugNow;
 }

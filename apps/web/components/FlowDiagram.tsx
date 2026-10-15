@@ -2,7 +2,7 @@
 // une carte illustrée, reliée par des connecteurs fléchés animés portant
 // la puissance qui y circule. Deux réseaux :
 //   - Réseau 1 (maison) : solaire, réseau 1, maison, équipements maison ;
-//   - Réseau 2 (piscine, jacuzzi, voiture) : réseau 2, piscine/spa, équipements.
+//   - Réseau 2 (piscine, jacuzzi, PAC, voiture) : réseau 2, piscine/spa, équipements.
 // La batterie est à cheval : charge depuis le réseau 2 (prise AC IN),
 // décharge vers la maison (PowerStream).
 // Desktop/tablette : SVG (viewBox fixe, mis à l'échelle). Mobile : cartes
@@ -127,7 +127,7 @@ function FlowSvg({ d, m }: { d: FlowData; m: Model }) {
 
       {/* Périmètres des 2 réseaux */}
       <Zone x={8} y={8} w={984} h={492} color={C.grid} label="Réseau 1 · maison" />
-      <Zone x={8} y={522} w={984} h={370} color={C.aux} label="Réseau 2 · piscine, jacuzzi, voiture" />
+      <Zone x={8} y={522} w={984} h={370} color={C.aux} label="Réseau 2 · piscine, jacuzzi, PAC, voiture" />
 
       {/* ── Connecteurs réseau 1 ── */}
       <Link d="M 500 112 L 500 168" color={C.solar} power={m.solarToHome} arrow="down" lx={514} ly={146} anchor="start" />
@@ -577,7 +577,7 @@ function FlowCompact({ d, m }: { d: FlowData; m: Model }) {
       </div>
       <div>
         <div className="text-[10px] font-bold tracking-[0.16em] uppercase mb-2" style={{ color: C.aux }}>
-          Réseau 2 · piscine, jacuzzi, voiture
+          Réseau 2 · piscine, jacuzzi, PAC, voiture
         </div>
         <div className="grid grid-cols-2 gap-2">
           {tile("Réseau 2 · achat", fmt(m.aux), m.aux > 0 ? C.import : C.grid)}

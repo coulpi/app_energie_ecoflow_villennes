@@ -122,7 +122,7 @@ export interface DashboardSnapshot {
   /** Connexion cloud Tuya de la prise AC : false = commandes non délivrées. */
   acSwitchOnline: boolean | null;
   /**
-   * Réseau indépendant piscine, jacuzzi, voiture (pince Shelly dédiée, rôle
+   * Réseau indépendant piscine, jacuzzi, PAC, voiture (pince Shelly dédiée, rôle
    * AUX_NETWORK_METER). Mesuré à part : n'entre PAS dans le bilan maison
    * (production / conso / grid / surplus). null = pas de compteur ou
    * mesure > 5 min.

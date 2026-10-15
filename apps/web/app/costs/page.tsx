@@ -144,7 +144,7 @@ export default async function CostsPage({
       <div>
         <h1 className="page-h1">Coûts d&rsquo;électricité</h1>
         <p className="page-sub mt-1">
-          Tarif EDF Tempo, réseau 1 (maison) et réseau 2 (piscine, jacuzzi, voiture), compteurs
+          Tarif EDF Tempo, réseau 1 (maison) et réseau 2 (piscine, jacuzzi, PAC, voiture), compteurs
           distincts. Du {fmtDate(report.from)} au {fmtDate(report.to)}.
         </p>
       </div>
@@ -497,7 +497,7 @@ function ContractForm({ contract: c }: { contract: Contract }) {
   return (
     <form action={updateContract.bind(null, c.network)} className="card space-y-3">
       <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-        Contrat Tempo · {c.network === "HOUSE" ? "réseau 1 (maison)" : "réseau 2 (piscine, jacuzzi, voiture)"}
+        Contrat Tempo · {c.network === "HOUSE" ? "réseau 1 (maison)" : "réseau 2 (piscine, jacuzzi, PAC, voiture)"}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <input name="name" defaultValue={c.name} className="input-base col-span-2" />

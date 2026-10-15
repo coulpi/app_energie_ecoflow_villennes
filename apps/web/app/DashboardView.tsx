@@ -99,7 +99,7 @@ export default function DashboardView({
     <div className="space-y-5 sm:space-y-6 max-w-[1500px] mx-auto">
       <PageHeader
         title="Tableau de bord"
-        sub="Vue d'ensemble · réseau 1 (maison) et réseau 2 (piscine, jacuzzi, voiture)"
+        sub="Vue d'ensemble · réseau 1 (maison) et réseau 2 (piscine, jacuzzi, PAC, voiture)"
         right={
           <span className="text-xs text-zinc-500 tabular-nums">
             Mis à jour {new Date(s.ts).toLocaleTimeString("fr-FR")}
@@ -213,7 +213,7 @@ export default function DashboardView({
             <ShareRow icon={Icon.home} label="Réseau 1 · maison" value={`${cons.value} ${cons.unit}`} pct={pct(consumption)} accent="home" />
             <ShareRow
               icon={Icon.pool}
-              label="Réseau 2 · piscine, jacuzzi, voiture"
+              label="Réseau 2 · piscine, jacuzzi, PAC, voiture"
               value={`${auxP.value} ${auxP.unit}`}
               pct={pct(Math.max(0, aux ?? 0))}
               accent="aux"

@@ -374,7 +374,7 @@ export default function JacuzziPage() {
               </span>
               <div>
                 <div className="text-zinc-100 font-medium">Circuit réseau 2</div>
-                <div className="text-xs text-zinc-500">Compteur piscine, jacuzzi et voiture, séparé de la maison</div>
+                <div className="text-xs text-zinc-500">Compteur piscine, jacuzzi, PAC et voiture, séparé de la maison</div>
               </div>
             </li>
             <li className="flex justify-between border-t pt-3" style={{ borderColor: "var(--hairline)" }}>

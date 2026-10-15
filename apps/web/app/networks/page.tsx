@@ -128,7 +128,7 @@ export default async function NetworksPage() {
     <div className="space-y-5 sm:space-y-6 max-w-[1500px] mx-auto">
       <PageHeader
         title="Réseaux électriques"
-        sub="Deux compteurs EDF distincts : réseau 1 (maison) et réseau 2 (piscine, jacuzzi, voiture)"
+        sub="Deux compteurs EDF distincts : réseau 1 (maison) et réseau 2 (piscine, jacuzzi, PAC, voiture)"
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
@@ -141,7 +141,7 @@ export default async function NetworksPage() {
           accent={grid > 30 ? "import" : "grid"}
           sub={`Conso maison ${fmtPower(r1W).value} ${fmtPower(r1W).unit}`}
         />
-        <KpiCard label="Réseau 2 · achat" value={fmtPower(r2W).value} unit={fmtPower(r2W).unit} icon={Icon.pool} accent="aux" sub="piscine, jacuzzi, voiture" />
+        <KpiCard label="Réseau 2 · achat" value={fmtPower(r2W).value} unit={fmtPower(r2W).unit} icon={Icon.pool} accent="aux" sub="piscine, jacuzzi, PAC, voiture" />
         <KpiCard
           label="Coût du jour"
           value={fmtEur(costToday.house.totalEur + costToday.aux.totalEur).replace(/\s?€/, "")}
@@ -178,7 +178,7 @@ export default async function NetworksPage() {
         </NetworkCard>
         <NetworkCard
           n={2}
-          title="Réseau 2 · piscine, jacuzzi, voiture"
+          title="Réseau 2 · piscine, jacuzzi, PAC, voiture"
           sub="Mesuré par la pince Shelly dédiée · alimente aussi la charge batterie"
           liveW={r2W}
           kwh={energy.import2Wh}
@@ -196,7 +196,7 @@ export default async function NetworksPage() {
               accent={c.name === "Charge batterie" ? "battery" : "aux"}
             />
           ))}
-          <ShareRow icon={Icon.fan} label="Pompe piscine et autres" value={fmtKWh(other(energy.import2Wh, c2))} pct={share(other(energy.import2Wh, c2), energy.import2Wh)} accent="neutral" />
+          <ShareRow icon={Icon.fan} label="Pompe piscine, PAC et autres" value={fmtKWh(other(energy.import2Wh, c2))} pct={share(other(energy.import2Wh, c2), energy.import2Wh)} accent="neutral" />
         </NetworkCard>
       </div>
 

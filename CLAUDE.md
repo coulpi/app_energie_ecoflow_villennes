@@ -334,16 +334,16 @@ Wi-Fi du jacuzzi, à figer en DHCP réservé sur le routeur), (2) écrire
 la boucle `jacuzzi-control.ts`, (3) ajouter les champs `ControlState`
 au schema Prisma, (4) UI minimale + endpoint `/api/jacuzzi/state`.
 
-## Réseau 2 : piscine, jacuzzi, voiture (`AUX_NETWORK_METER`)
+## Réseau 2 : piscine, jacuzzi, PAC, voiture (`AUX_NETWORK_METER`)
 
-Piscine, jacuzzi et prises / bornes de recharge de voiture électrique sont
+Piscine, jacuzzi, pompe à chaleur et prises / bornes de recharge voiture sont
 sur un **réseau électrique séparé** (2ᵉ compteur EDF), mesuré par **une
 pince dédiée du Shelly** (l'autre pince reste le compteur réseau maison).
 Les deux réseaux sont suivis **séparément** :
 
 - Rattachement d'un appareil / profil de charge au réseau 2 : par son nom,
   règle unique `isNetwork2()` de `apps/web/lib/networks.ts` (piscine,
-  jacuzzi, spa, voiture, borne, VE). La prise AC de charge batterie
+  jacuzzi, spa, PAC / pompe à chaleur, voiture, borne, VE). La prise AC de charge batterie
   (`BATTERY_AC_SWITCH`) est aussi sur le réseau 2.
 - Rôle Prisma `AUX_NETWORK_METER` (« Réseau 2 (piscine, jacuzzi,
   voiture) » dans `/devices`). Aucun calcul maison ne le lit (snapshot,
@@ -372,7 +372,14 @@ Les deux réseaux sont suivis **séparément** :
 
 ## Détection live d'appareils (`/api/loads/live`)
 
-Comparaison conso bilanée actuelle (`prod + grid`, **sans PS** car la
+**Par réseau** : les profils non mesurés du réseau 2 (`isNetwork2` :
+pompe piscine, PAC…) sont expliqués par le résiduel du compteur réseau 2 =
+moyenne 2 min − plancher (p10 sur 24 h, ≤ 300 W) − prises mesurées du
+réseau 2 (jacuzzi, voiture) − prise AC de charge batterie (`residualR2W`).
+Les profils du réseau 1 suivent la méthode ci-dessous (conso maison).
+Même combinatoire (`explain()`) pour les deux réseaux.
+
+Réseau 1 : comparaison conso bilanée actuelle (`prod + grid`, **sans PS** car la
 baseline est apprise sans injection) à une **double baseline** apprise
 sur 7 jours :
 
