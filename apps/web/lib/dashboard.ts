@@ -4,6 +4,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { periodRange } from "@/lib/costs";
+import { isNetwork2 } from "@/lib/networks";
 
 const BUCKET_MIN = 15;
 
@@ -303,7 +304,7 @@ export async function getEquipmentStates(now = new Date()): Promise<EquipmentSta
     const stale = !r || now.getTime() - r.ts.getTime() > STALE_MS;
     const w = r?.powerW ?? null;
     const net =
-      d.role === "APPLIANCE" ? (/piscine|jacuzzi|spa|pool/i.test(d.name) ? 2 : 1) : (ROLE_NETWORK[d.role] ?? null);
+      d.role === "APPLIANCE" ? (isNetwork2(d.name) ? 2 : 1) : (ROLE_NETWORK[d.role] ?? null);
     let status: EquipmentState["status"] = "ok";
     let statusLabel = "Normal";
     if (online === false) {

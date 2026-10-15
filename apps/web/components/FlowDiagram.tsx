@@ -2,11 +2,13 @@
 // une carte illustrée, reliée par des connecteurs fléchés animés portant
 // la puissance qui y circule. Deux réseaux :
 //   - Réseau 1 (maison) : solaire, réseau 1, maison, équipements maison ;
-//   - Réseau 2 (piscine + jacuzzi) : réseau 2, piscine/spa, équipements.
+//   - Réseau 2 (piscine, jacuzzi, voiture) : réseau 2, piscine/spa, équipements.
 // La batterie est à cheval : charge depuis le réseau 2 (prise AC IN),
 // décharge vers la maison (PowerStream).
 // Desktop/tablette : SVG (viewBox fixe, mis à l'échelle). Mobile : cartes
 // HTML empilées, lisibles sans zoom. Couleurs = variables CSS de thème.
+
+import { isNetwork2 } from "@/lib/networks";
 
 export interface FlowLoad {
   id: string;
@@ -27,11 +29,10 @@ export interface FlowData {
   loads: FlowLoad[];
 }
 
-// Piscine et jacuzzi sont sur le réseau 2 : leurs profils de charge sont
-// rattachés au nœud de ce réseau, pas à la maison.
-const AUX_LOAD_RE = /piscine|jacuzzi|\bspa\b|pool/i;
+// Piscine, jacuzzi et voiture sont sur le réseau 2 : leurs profils de
+// charge sont rattachés au nœud de ce réseau, pas à la maison.
 export const isAuxLoad = (p: { id: string; name: string }) =>
-  AUX_LOAD_RE.test(`${p.id} ${p.name}`);
+  isNetwork2(`${p.id} ${p.name}`);
 export const loadPower = (p: FlowLoad) =>
   p.source === "measured" && typeof p.measuredW === "number" ? p.measuredW : p.expectedW;
 
@@ -126,7 +127,7 @@ function FlowSvg({ d, m }: { d: FlowData; m: Model }) {
 
       {/* Périmètres des 2 réseaux */}
       <Zone x={8} y={8} w={984} h={492} color={C.grid} label="Réseau 1 · maison" />
-      <Zone x={8} y={522} w={984} h={370} color={C.aux} label="Réseau 2 · piscine + jacuzzi" />
+      <Zone x={8} y={522} w={984} h={370} color={C.aux} label="Réseau 2 · piscine, jacuzzi, voiture" />
 
       {/* ── Connecteurs réseau 1 ── */}
       <Link d="M 500 112 L 500 168" color={C.solar} power={m.solarToHome} arrow="down" lx={514} ly={146} anchor="start" />
@@ -236,7 +237,7 @@ function FlowSvg({ d, m }: { d: FlowData; m: Model }) {
 
       <Card x={388} y={580} w={224} h={120} active={m.aux > 0} color={C.aux}>
         <PoolArt x={404} y={598} />
-        <CardText x={490} y={612} title="Piscine · spa" value={fmt(m.aux)} color={C.aux} active={m.aux > 0} />
+        <CardText x={490} y={612} title="Piscine · spa · VE" value={fmt(m.aux)} color={C.aux} active={m.aux > 0} />
         <text x={490} y={672} style={{ font: "500 12px ui-sans-serif, system-ui", fill: C.text2 }}>
           {m.auxLoads.filter((p) => p.currentlyOn).length} actif(s) sur {m.auxLoads.length}
         </text>
@@ -549,7 +550,7 @@ function FlowCompact({ d, m }: { d: FlowData; m: Model }) {
     { from: "Réseau 1", to: "Maison", w: m.gridImport, color: C.import },
     { from: "Maison", to: "Réseau 1", w: m.gridExport, color: C.grid },
     { from: "Batterie", to: "Maison", w: m.batteryToHome, color: C.battery },
-    { from: "Réseau 2", to: "Piscine · spa", w: m.aux, color: C.import },
+    { from: "Réseau 2", to: "Piscine · spa · VE", w: m.aux, color: C.import },
     { from: "Réseau 2", to: "Batterie", w: m.auxToBattery, color: C.battery },
   ].filter((f) => f.w > 0);
   const tile = (label: string, value: string, color: string, sub?: string) => (
@@ -576,7 +577,7 @@ function FlowCompact({ d, m }: { d: FlowData; m: Model }) {
       </div>
       <div>
         <div className="text-[10px] font-bold tracking-[0.16em] uppercase mb-2" style={{ color: C.aux }}>
-          Réseau 2 · piscine + jacuzzi
+          Réseau 2 · piscine, jacuzzi, voiture
         </div>
         <div className="grid grid-cols-2 gap-2">
           {tile("Réseau 2 · achat", fmt(m.aux), m.aux > 0 ? C.import : C.grid)}

@@ -1,7 +1,7 @@
 // Calcul des coûts d'électricité au tarif EDF Tempo, séparément pour les
 // 2 réseaux (compteurs distincts) :
 //   - HOUSE : réseau maison, import mesuré par le GRID_METER ;
-//   - AUX   : réseau indépendant piscine + jacuzzi (AUX_NETWORK_METER).
+//   - AUX   : réseau indépendant piscine, jacuzzi, voiture (AUX_NETWORK_METER).
 // Chaque heure du rollup (ReadingHourly) est valorisée selon la couleur du
 // jour Tempo (6h → 6h le lendemain, table TempoDay) et la plage HC/HP du
 // contrat (EnergyContract). Abonnement proratisé à la durée de la période.

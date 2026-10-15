@@ -99,7 +99,7 @@ export default function DashboardView({
     <div className="space-y-5 sm:space-y-6 max-w-[1500px] mx-auto">
       <PageHeader
         title="Tableau de bord"
-        sub="Vue d'ensemble · réseau 1 (maison) et réseau 2 (piscine + jacuzzi)"
+        sub="Vue d'ensemble · réseau 1 (maison) et réseau 2 (piscine, jacuzzi, voiture)"
         right={
           <span className="text-xs text-zinc-500 tabular-nums">
             Mis à jour {new Date(s.ts).toLocaleTimeString("fr-FR")}
@@ -157,7 +157,7 @@ export default function DashboardView({
           sub={`Acheté aujourd'hui ${fmtKWh(energy.import1Wh)}`}
         />
         <KpiCard
-          label="Réseau 2 · piscine"
+          label="Réseau 2"
           value={auxP.value}
           unit={auxP.unit}
           icon={Icon.pool}
@@ -213,7 +213,7 @@ export default function DashboardView({
             <ShareRow icon={Icon.home} label="Réseau 1 · maison" value={`${cons.value} ${cons.unit}`} pct={pct(consumption)} accent="home" />
             <ShareRow
               icon={Icon.pool}
-              label="Réseau 2 · piscine + jacuzzi"
+              label="Réseau 2 · piscine, jacuzzi, voiture"
               value={`${auxP.value} ${auxP.unit}`}
               pct={pct(Math.max(0, aux ?? 0))}
               accent="aux"
@@ -224,7 +224,7 @@ export default function DashboardView({
               return (
                 <ShareRow
                   key={p.id}
-                  icon={isAuxLoad(p) ? Icon.pool : /voiture|ev|car/i.test(p.name) ? Icon.car : Icon.plug}
+                  icon={/voiture|borne|\bev\b|car/i.test(p.name) ? Icon.car : isAuxLoad(p) ? Icon.pool : Icon.plug}
                   label={`${p.name} · R${isAuxLoad(p) ? 2 : 1}`}
                   value={`${f.value} ${f.unit}`}
                   pct={pct(w)}

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getDashboardSnapshot } from "@/lib/snapshot";
 import { computeCosts, periodRange } from "@/lib/costs";
 import { getSeries, getTodayEnergy } from "@/lib/dashboard";
+import { isNetwork2 } from "@/lib/networks";
 import { EnergyDonut, PowerChart } from "@/components/charts";
 import {
   fmtEur,
@@ -17,7 +18,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const AUX_RE = /piscine|jacuzzi|spa|pool/i;
+
 
 /** Conso du jour par appareil mesuré (agrégats horaires, heure en cours exclue). */
 async function circuitsToday(from: Date) {
@@ -33,7 +34,7 @@ async function circuitsToday(from: Date) {
   const wh = new Map(rows.map((r) => [r.deviceId, r._sum.consoWh ?? 0]));
   return devices.map((d) => ({
     name: d.role === "BATTERY_AC_SWITCH" ? "Charge batterie" : d.name.replace(/^Prise\s+/i, ""),
-    network: (d.role === "BATTERY_AC_SWITCH" || AUX_RE.test(d.name) ? 2 : 1) as 1 | 2,
+    network: (d.role === "BATTERY_AC_SWITCH" || isNetwork2(d.name) ? 2 : 1) as 1 | 2,
     wh: wh.get(d.id) ?? 0,
     car: /voiture|ev\b|car/i.test(d.name),
   }));
@@ -124,7 +125,7 @@ export default async function NetworksPage() {
     <div className="space-y-5 sm:space-y-6 max-w-[1500px] mx-auto">
       <PageHeader
         title="Réseaux électriques"
-        sub="Deux compteurs EDF distincts : réseau 1 (maison) et réseau 2 (piscine + jacuzzi)"
+        sub="Deux compteurs EDF distincts : réseau 1 (maison) et réseau 2 (piscine, jacuzzi, voiture)"
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
@@ -137,7 +138,7 @@ export default async function NetworksPage() {
           accent={grid > 30 ? "import" : "grid"}
           sub={`Conso maison ${fmtPower(r1W).value} ${fmtPower(r1W).unit}`}
         />
-        <KpiCard label="Réseau 2 · achat" value={fmtPower(r2W).value} unit={fmtPower(r2W).unit} icon={Icon.pool} accent="aux" sub="piscine + jacuzzi" />
+        <KpiCard label="Réseau 2 · achat" value={fmtPower(r2W).value} unit={fmtPower(r2W).unit} icon={Icon.pool} accent="aux" sub="piscine, jacuzzi, voiture" />
         <KpiCard
           label="Coût du jour"
           value={fmtEur(costToday.house.totalEur + costToday.aux.totalEur).replace(/\s?€/, "")}
@@ -174,7 +175,7 @@ export default async function NetworksPage() {
         </NetworkCard>
         <NetworkCard
           n={2}
-          title="Réseau 2 · piscine + jacuzzi"
+          title="Réseau 2 · piscine, jacuzzi, voiture"
           sub="Mesuré par la pince Shelly dédiée · alimente aussi la charge batterie"
           liveW={r2W}
           kwh={energy.import2Wh}
@@ -185,7 +186,7 @@ export default async function NetworksPage() {
           {c2.map((c) => (
             <ShareRow
               key={c.name}
-              icon={c.name === "Charge batterie" ? Icon.battery : Icon.pool}
+              icon={c.name === "Charge batterie" ? Icon.battery : c.car ? Icon.car : Icon.pool}
               label={c.name}
               value={fmtKWh(c.wh)}
               pct={share(c.wh, energy.import2Wh)}

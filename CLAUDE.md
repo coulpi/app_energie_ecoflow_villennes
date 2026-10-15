@@ -334,14 +334,19 @@ Wi-Fi du jacuzzi, à figer en DHCP réservé sur le routeur), (2) écrire
 la boucle `jacuzzi-control.ts`, (3) ajouter les champs `ControlState`
 au schema Prisma, (4) UI minimale + endpoint `/api/jacuzzi/state`.
 
-## Réseau indépendant piscine + jacuzzi (`AUX_NETWORK_METER`)
+## Réseau 2 : piscine, jacuzzi, voiture (`AUX_NETWORK_METER`)
 
-Piscine et jacuzzi sont sur un **réseau électrique séparé**, mesuré par
-**une pince dédiée du Shelly** (l'autre pince reste le compteur réseau
-maison). Les deux réseaux sont suivis **séparément** :
+Piscine, jacuzzi et prises / bornes de recharge de voiture électrique sont
+sur un **réseau électrique séparé** (2ᵉ compteur EDF), mesuré par **une
+pince dédiée du Shelly** (l'autre pince reste le compteur réseau maison).
+Les deux réseaux sont suivis **séparément** :
 
-- Rôle Prisma `AUX_NETWORK_METER` (« Réseau indépendant (piscine +
-  jacuzzi) » dans `/devices`). Aucun calcul maison ne le lit (snapshot,
+- Rattachement d'un appareil / profil de charge au réseau 2 : par son nom,
+  règle unique `isNetwork2()` de `apps/web/lib/networks.ts` (piscine,
+  jacuzzi, spa, voiture, borne, VE). La prise AC de charge batterie
+  (`BATTERY_AC_SWITCH`) est aussi sur le réseau 2.
+- Rôle Prisma `AUX_NETWORK_METER` (« Réseau 2 (piscine, jacuzzi,
+  voiture) » dans `/devices`). Aucun calcul maison ne le lit (snapshot,
   follow-load, moteur de règles, agent, loads filtrent tous par rôle) →
   **hors bilan** production / conso / grid / surplus.
 - Snapshot : `auxNetworkW` (somme des compteurs AUX actifs, mesure < 5 min)
