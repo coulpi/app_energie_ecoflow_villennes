@@ -19,18 +19,18 @@ export interface CostPoint {
   savings: number;
 }
 
-// Palette catégorielle validée (fond sombre, CVD) : réseau 1 bleu, réseau 2
+// Palette catégorielle validée (CVD, étapes claire et sombre dans globals.css) : réseau 1 bleu, réseau 2
 // orange, économies aqua ; abonnement en gris neutre (ce n'est pas une série
 // d'identité, juste une part fixe).
 const COLORS = {
-  r1: "#3987e5",
-  r2: "#d95926",
-  sub: "#71717a",
-  savings: "#199e70",
+  r1: "var(--series-1)",
+  r2: "var(--series-2)",
+  sub: "var(--series-sub)",
+  savings: "var(--series-3)",
 };
-const SURFACE = "#111114";
-const tickStyle = { fill: "#a1a1aa", fontSize: 10 };
-const axisLine = { stroke: "rgba(255,255,255,0.08)" };
+const SURFACE = "var(--card-solid)";
+const tickStyle = { fill: "var(--text-3)", fontSize: 10 };
+const axisLine = { stroke: "var(--hairline)" };
 
 const eur = (v: number) =>
   v.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
@@ -129,7 +129,7 @@ export default function CostChart({
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+            <CartesianGrid stroke="var(--hairline)" vertical={false} />
             <XAxis dataKey="label" tick={tickStyle} axisLine={axisLine} tickLine={false} minTickGap={8} />
             <YAxis
               tick={tickStyle}
@@ -139,7 +139,7 @@ export default function CostChart({
               tickFormatter={(v: number) => `${v} €`}
             />
             <Tooltip
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              cursor={{ fill: "var(--hairline)" }}
               content={<TooltipContent showSub={showSub} show1={show1} show2={show2} />}
             />
             {stack.map((s, i) => (

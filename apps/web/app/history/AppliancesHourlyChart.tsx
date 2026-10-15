@@ -23,8 +23,8 @@ export interface DayBoundary {
   dateLabel: string; // ex. "29/04"
 }
 
-const tickStyle = { fill: "#a1a1aa", fontSize: 10 };
-const axisLine = { stroke: "rgba(255,255,255,0.08)" };
+const tickStyle = { fill: "var(--text-3)", fontSize: 10 };
+const axisLine = { stroke: "var(--hairline)" };
 
 const PALETTE = [
   "#10b981",
@@ -101,7 +101,7 @@ export default function AppliancesHourlyChart({
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <CartesianGrid strokeDasharray="2 4" stroke="var(--hairline)" />
             <XAxis
               dataKey="label"
               tick={tickStyle}
@@ -124,24 +124,24 @@ export default function AppliancesHourlyChart({
             />
             <Tooltip
               content={<TooltipContent />}
-              cursor={{ stroke: "rgba(255,255,255,0.1)" }}
+              cursor={{ stroke: "var(--text-3)" }}
             />
             <Legend
-              wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
+              wrapperStyle={{ fontSize: 11, color: "var(--text-3)" }}
               iconType="circle"
             />
             {dayBoundaries.map((b) => (
               <ReferenceLine
                 key={b.label}
                 x={b.label}
-                stroke="rgba(255,255,255,0.25)"
+                stroke="var(--text-3)"
                 strokeDasharray="3 3"
                 ifOverflow="extendDomain"
               >
                 <Label
                   value={b.dateLabel}
                   position="insideTop"
-                  fill="#a1a1aa"
+                  fill="var(--text-3)"
                   fontSize={10}
                   offset={4}
                 />

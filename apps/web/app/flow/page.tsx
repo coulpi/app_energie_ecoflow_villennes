@@ -1,10 +1,6 @@
-import { getDashboardSnapshot } from "@/lib/snapshot";
-import EnergyFlow from "./EnergyFlow";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-export default async function FlowPage() {
-  const snapshot = await getDashboardSnapshot();
-  return <EnergyFlow initial={snapshot} />;
+// Le schéma de flux est désormais sur le tableau de bord.
+export default function FlowPage() {
+  redirect("/");
 }

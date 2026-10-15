@@ -10,8 +10,14 @@ d'authentification.
 Monorepo `pnpm` (workspaces) :
 
 - `apps/web` — Next.js 15 (App Router, TypeScript, Tailwind, shadcn/ui).
-  Pages : `/` dashboard, `/flow` schéma de flux animé, `/agent`, `/devices`,
-  `/rules`, `/control`, `/loads`, `/tariffs`, `/history`, `/kiosk`.
+  Menu (`components/Sidebar.tsx`) : `/` tableau de bord (KPIs, schéma de
+  flux 2 réseaux, alertes, état des équipements, courbes 24 h), `/battery`
+  (forçage, pilotage, PowerStream, Tempo), `/networks` (réseau 1 vs 2),
+  `/solar`, Équipements (`/jacuzzi`, `/loads`), `/costs`, `/history`,
+  Paramètres (`/devices`, `/rules`, `/tariffs`, `/agent`). Sous-onglets via
+  `components/SubNav.tsx` + `nav-tabs.ts`. Redirections : `/flow` → `/`,
+  `/control` → `/battery`, `/equipment` → `/jacuzzi`, `/settings` →
+  `/devices`. `/kiosk` : affichage plein écran.
 - `apps/worker` — process Node.js : poller Tuya 30 s, MQTT EcoFlow privé
   (lecture + écriture), poller Tempo 1 h, moteur de règles, boucle
   FOLLOW_LOAD, agent LLM (Ollama) sur intervalle.
@@ -23,6 +29,31 @@ Monorepo `pnpm` (workspaces) :
 Déploiement : `docker compose up -d` (services `postgres`, `web`, `worker`).
 Postgres en binding interne uniquement (pas de port hôte par défaut, évite
 un conflit local sur 5432).
+
+## Interface : thème clair / sombre
+
+- Clair par défaut, bouton dans le menu (`ThemeToggle`, `localStorage.theme`,
+  script anti-flash dans `app/layout.tsx`) → classe `dark` sur `<html>`.
+- Les palettes Tailwind utilisées (zinc, emerald, rose, amber, sky, cyan,
+  violet, red, orange, blue + `white`) sont adossées à des variables CSS
+  (`app/theme-colors.css`, **généré** par `apps/web/scripts/gen-theme.cjs`) :
+  en clair l'échelle est inversée (text-zinc-100 → texte foncé,
+  bg-zinc-900 → fond clair, `white/[0.07]` → encre foncée). Les classes
+  existantes s'adaptent donc sans `dark:`. `slate` n'est pas thémé (barre
+  latérale bleu nuit dans les 2 thèmes).
+- Jetons sémantiques dans `globals.css` : `--card`, `--text*`, `--hairline`,
+  `--track`, `--flow-*` (schéma de flux, graphiques), `--series-*`
+  (palette catégorielle des coûts). SVG/recharts : `stroke="var(--…)"`.
+- Un sous-arbre peut rester sombre en ajoutant la classe `dark` sur un
+  conteneur (panneau jacuzzi, `/kiosk`).
+- Composants partagés : `components/ui.tsx` (KpiCard, Section, ShareRow,
+  icônes), `widgets.tsx` (alertes, badges Tempo / mode), `charts.tsx`
+  (PowerChart, EnergyDonut), `FlowDiagram.tsx`, `BatteryControl.tsx`.
+  Données serveur du tableau de bord : `lib/dashboard.ts` (courbes 15 min,
+  bilan du jour, alertes, état des équipements).
+- **Piège Prisma** : `include: { readings: { take: 1 } }` charge toutes les
+  mesures de chaque appareil avant de tronquer → utiliser
+  `latestReadings()` (`DISTINCT ON`) de `lib/dashboard.ts`.
 
 ## Pilotage EcoFlow — IMPORTANT
 
@@ -673,8 +704,8 @@ un bandeau + une tuile « Injoignable » quand `online === false`.
 
 Recharge la batterie jusqu'à un SoC cible **quel que soit le mode**
 (prioritaire sur FOLLOW_LOAD / RULES / fenêtre Tempo), en **tirant sur le
-réseau** si le surplus solaire ne suffit pas. Piloté depuis le dashboard
-`/` (carte « Forcer la recharge »).
+réseau** si le surplus solaire ne suffit pas. Piloté depuis la page
+`/battery` (carte « Forcer la recharge »).
 
 - UI : `apps/web/app/ForceChargeCard.tsx` → `POST /api/control/force-charge`.
   Corps : `{forceChargeSoc, forceChargeWatts, startAt?, durationMin?}`

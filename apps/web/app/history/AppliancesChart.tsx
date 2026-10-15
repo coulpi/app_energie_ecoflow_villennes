@@ -17,8 +17,8 @@ export interface AppliancePoint {
   [deviceName: string]: number | string;
 }
 
-const tickStyle = { fill: "#a1a1aa", fontSize: 10 };
-const axisLine = { stroke: "rgba(255,255,255,0.08)" };
+const tickStyle = { fill: "var(--text-3)", fontSize: 10 };
+const axisLine = { stroke: "var(--hairline)" };
 
 const PALETTE = [
   "#10b981",
@@ -90,7 +90,7 @@ export default function AppliancesChart({
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+            <CartesianGrid strokeDasharray="2 4" stroke="var(--hairline)" />
             <XAxis
               dataKey="label"
               tick={tickStyle}
@@ -107,10 +107,10 @@ export default function AppliancesChart({
             />
             <Tooltip
               content={<TooltipContent />}
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              cursor={{ fill: "var(--hairline)" }}
             />
             <Legend
-              wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
+              wrapperStyle={{ fontSize: 11, color: "var(--text-3)" }}
               iconType="circle"
             />
             {deviceNames.map((name, i) => (

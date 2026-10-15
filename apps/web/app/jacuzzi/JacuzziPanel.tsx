@@ -57,7 +57,7 @@ export interface JacuzziPanelProps {
   plugTs?: string | null;
 }
 
-interface TubState {
+export interface TubState {
   power: boolean;
   heaterOn: boolean;
   filterOn: boolean;
@@ -188,7 +188,7 @@ const KEYFRAMES = `
 @keyframes jcz-ripple { 0% { r: 20; opacity: .4; } 100% { r: 100; opacity: 0; } }
 `;
 
-function useKeyframes() {
+export function useKeyframes() {
   useEffect(() => {
     if (typeof document === "undefined") return;
     if (document.getElementById("jacuzzi-keyframes")) return;
@@ -203,7 +203,7 @@ function useKeyframes() {
 // Tub schematic (iso / top / three-quarter)
 // ---------------------------------------------------------------------------
 
-function IsoTub({ state }: { state: TubState }) {
+export function IsoTub({ state }: { state: TubState }) {
   const { power, heaterOn, filterOn, jetsOn, bubblesOn, sanitizerOn, currentTempC, presetTempC } = state;
   const water = waterColor(currentTempC);
   const glow = waterGlow(currentTempC);

@@ -1,3 +1,5 @@
+import SubNav from "@/components/SubNav";
+import { SETTINGS_TABS } from "@/components/nav-tabs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
@@ -170,8 +172,9 @@ export default async function DevicesPage() {
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-5xl mx-auto">
+      <SubNav items={SETTINGS_TABS} />
       <div>
-        <h1 className="page-h1">Équipements</h1>
+        <h1 className="page-h1">Appareils</h1>
         <p className="page-sub mt-1">
           Compteurs, prises et batteries reliés au système de pilotage.
         </p>

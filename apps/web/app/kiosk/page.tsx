@@ -30,7 +30,7 @@ export default async function KioskPage() {
         body { overflow: hidden; }
       `}</style>
       <div
-        className="fixed inset-0 grid grid-cols-2 grid-rows-2 gap-1 bg-black"
+        className="dark fixed inset-0 z-[60] grid grid-cols-2 grid-rows-2 gap-1 bg-black"
         style={{ height: "100vh", width: "100vw" }}
       >
         <Cell label="Production" value={fmt(s.productionW, "W")} tone="good" />

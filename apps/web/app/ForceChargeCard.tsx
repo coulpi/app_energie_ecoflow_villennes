@@ -277,7 +277,7 @@ export default function ForceChargeCard() {
   const holding = running && endMs !== null && soc != null && soc >= target;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white/[0.03] backdrop-blur-sm ring-1 ring-amber-500/30 p-4 sm:p-5">
+    <div className="card relative overflow-hidden ring-1 ring-amber-500/30">
       <div className="pointer-events-none absolute inset-x-0 -top-12 h-24 bg-gradient-to-b from-amber-500/15 to-transparent blur-xl" />
       <div className="relative flex items-center justify-between gap-3 mb-3">
         <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-zinc-400">
@@ -333,7 +333,7 @@ export default function ForceChargeCard() {
             </span>
           </div>
           {!holding && (
-            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--track)" }}>
               <div
                 className="h-full bg-amber-400 transition-[width] duration-700"
                 style={{ width: `${pct}%` }}

@@ -1,38 +1,111 @@
+@import "./theme-colors.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Jetons sémantiques. Clair par défaut (:root), sombre via .dark sur <html>
+ * (bouton du menu, mémorisé en localStorage). Les palettes Tailwind sont
+ * elles-mêmes thémées dans theme-colors.css. */
 :root {
-  color-scheme: dark light;
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --card-border: #e6e9f1;
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 20px rgba(15, 23, 42, 0.05);
+  --text: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+  --hairline: rgba(15, 23, 42, 0.08);
+  --track: rgba(15, 23, 42, 0.07);
+  --node-bg: #ffffff;
+  --node-border: #e2e8f0;
+  /* Flux d'énergie */
+  --flow-solar: #e8a200;
+  --flow-home: #16a34a;
+  --flow-grid: #2563eb;
+  --flow-battery: #7c3aed;
+  --flow-import: #dc2626;
+  --flow-aux: #0891b2;
+  --flow-dim: rgba(15, 23, 42, 0.12);
+  --card-solid: #ffffff;
+  /* Séries catégorielles validées (palette dataviz, étapes claires). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-sub: #a1a1aa;
+  --on-accent: #ffffff;
 }
 
-html, body {
-  @apply bg-zinc-950 text-zinc-100 antialiased;
+.dark {
+  color-scheme: dark;
+  --bg: #07080c;
+  --card: rgba(255, 255, 255, 0.03);
+  --card-border: rgba(255, 255, 255, 0.07);
+  --card-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --text: rgba(245, 245, 250, 0.95);
+  --text-2: rgba(245, 245, 250, 0.6);
+  --text-3: rgba(245, 245, 250, 0.38);
+  --hairline: rgba(255, 255, 255, 0.07);
+  --track: rgba(255, 255, 255, 0.07);
+  --node-bg: rgba(10, 12, 18, 0.9);
+  --node-border: rgba(255, 255, 255, 0.12);
+  --flow-solar: oklch(82% 0.16 75);
+  --flow-home: oklch(78% 0.17 155);
+  --flow-grid: oklch(78% 0.13 220);
+  --flow-battery: oklch(75% 0.16 305);
+  --flow-import: oklch(70% 0.21 25);
+  --flow-aux: oklch(80% 0.13 190);
+  --flow-dim: rgba(255, 255, 255, 0.1);
+  --card-solid: #111114;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-sub: #71717a;
 }
 
-/* Fond ambient cohérent avec la page Flow */
+html,
 body {
-  background:
-    radial-gradient(circle at 20% 0%, #0e1220 0%, #07080c 50%, #0c0e14 100%);
+  @apply antialiased;
+  color: var(--text);
+}
+
+body {
+  background: var(--bg);
+}
+
+.dark body {
+  background: radial-gradient(circle at 20% 0%, #0e1220 0%, #07080c 50%, #0c0e14 100%);
   background-attachment: fixed;
 }
 
 @layer components {
-  /* Carte standard, style "flow" */
+  /* Carte standard : blanche ombrée en clair, verre fumé en sombre. */
   .card {
-    @apply rounded-2xl border border-white/[0.07] bg-white/[0.03]
-           backdrop-blur-sm shadow-[0_1px_0_rgba(255,255,255,0.03)_inset]
-           p-4 sm:p-5;
+    @apply rounded-2xl border p-4 sm:p-5;
+    background: var(--card);
+    border-color: var(--card-border);
+    box-shadow: var(--card-shadow);
   }
 
   .card-hi {
-    @apply rounded-2xl border border-white/[0.10] bg-gradient-to-b
-           from-white/[0.05] to-white/[0.02] p-4 sm:p-5;
+    @apply card;
+  }
+
+  /* Titre de section dans une carte */
+  .card-title {
+    @apply text-sm font-semibold;
+    color: var(--text);
+  }
+
+  .card-kicker {
+    @apply text-[10px] uppercase tracking-[0.14em] text-zinc-500;
   }
 
   /* En-tête de page commun */
   .page-h1 {
     @apply text-xl sm:text-2xl font-semibold tracking-tight;
+    color: var(--text);
   }
 
   .page-sub {
@@ -41,9 +114,13 @@ body {
 
   /* Champs de formulaire homogènes */
   .input-base {
-    @apply bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm
-           text-zinc-100 outline-none focus:border-emerald-600
-           focus:ring-1 focus:ring-emerald-600/40 transition;
+    @apply border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100
+           outline-none focus:border-emerald-600 focus:ring-1
+           focus:ring-emerald-600/40 transition;
+    background: var(--card);
+  }
+  .dark .input-base {
+    @apply bg-zinc-900;
   }
 
   .btn {
@@ -52,7 +129,8 @@ body {
            disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-emerald-600 hover:bg-emerald-500 text-white;
+    @apply btn bg-emerald-600 hover:bg-emerald-500;
+    color: var(--on-accent);
   }
   .btn-ghost {
     @apply btn bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800;

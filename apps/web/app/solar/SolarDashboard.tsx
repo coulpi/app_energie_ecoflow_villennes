@@ -327,30 +327,30 @@ function InverterPanel({
                   </defs>
                   <CartesianGrid
                     strokeDasharray="2 4"
-                    stroke="rgba(255,255,255,0.05)"
+                    stroke="var(--hairline)"
                   />
                   <XAxis
                     dataKey="label"
-                    tick={{ fill: "#a1a1aa", fontSize: 10 }}
-                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+                    tick={{ fill: "var(--text-3)", fontSize: 10 }}
+                    axisLine={{ stroke: "var(--hairline)" }}
                     tickLine={false}
                     minTickGap={32}
                   />
                   <YAxis
-                    tick={{ fill: "#a1a1aa", fontSize: 10 }}
-                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+                    tick={{ fill: "var(--text-3)", fontSize: 10 }}
+                    axisLine={{ stroke: "var(--hairline)" }}
                     tickLine={false}
                     width={36}
                     tickFormatter={(v: number) => `${v} W`}
                   />
                   <Tooltip
                     contentStyle={{
-                      background: "#0a0a0aee",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      background: "var(--card-solid)",
+                      border: "1px solid var(--card-border)",
                       borderRadius: 8,
                       fontSize: 11,
                     }}
-                    labelStyle={{ color: "#a1a1aa" }}
+                    labelStyle={{ color: "var(--text-3)" }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
                   {panelKeys.map((k, i) => (

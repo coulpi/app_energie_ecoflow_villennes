@@ -1,3 +1,5 @@
+import SubNav from "@/components/SubNav";
+import { SETTINGS_TABS } from "@/components/nav-tabs";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -53,6 +55,7 @@ export default async function TariffsPage() {
   });
   return (
     <div className="space-y-5 sm:space-y-6 max-w-5xl mx-auto">
+      <SubNav items={SETTINGS_TABS} />
       <div>
         <h1 className="page-h1">Fenêtres tarifaires</h1>
         <p className="page-sub mt-1">

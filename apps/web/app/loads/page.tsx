@@ -1,3 +1,5 @@
+import SubNav from "@/components/SubNav";
+import { EQUIPMENT_TABS } from "@/components/nav-tabs";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import DetectButton from "./DetectButton";
@@ -95,6 +97,7 @@ export default async function LoadsPage() {
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-5xl mx-auto">
+      <SubNav items={EQUIPMENT_TABS} />
       <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="page-h1">Charges récurrentes</h1>

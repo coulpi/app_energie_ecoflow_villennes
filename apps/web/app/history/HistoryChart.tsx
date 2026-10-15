@@ -21,8 +21,8 @@ export interface HistoryPoint {
   soc: number | null;
 }
 
-const tickStyle = { fill: "#a1a1aa", fontSize: 10 };
-const axisLine = { stroke: "rgba(255,255,255,0.08)" };
+const tickStyle = { fill: "var(--text-3)", fontSize: 10 };
+const axisLine = { stroke: "var(--hairline)" };
 
 function fmtWh(v: number) {
   if (Math.abs(v) >= 1000) return `${(v / 1000).toFixed(1)} kWh`;
@@ -86,7 +86,7 @@ export default function HistoryChart({ data }: { data: HistoryPoint[] }) {
                   <stop offset="100%" stopColor="#38bdf8" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" />
+              <CartesianGrid strokeDasharray="2 4" stroke="var(--hairline)" />
               <XAxis
                 dataKey="label"
                 tick={tickStyle}
@@ -105,10 +105,10 @@ export default function HistoryChart({ data }: { data: HistoryPoint[] }) {
               />
               <Tooltip
                 content={<TooltipContent />}
-                cursor={{ stroke: "rgba(255,255,255,0.1)" }}
+                cursor={{ stroke: "var(--text-3)" }}
               />
               <Legend
-                wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
+                wrapperStyle={{ fontSize: 11, color: "var(--text-3)" }}
                 iconType="circle"
               />
               <Area
@@ -149,7 +149,7 @@ export default function HistoryChart({ data }: { data: HistoryPoint[] }) {
               >
                 <CartesianGrid
                   strokeDasharray="2 4"
-                  stroke="rgba(255,255,255,0.05)"
+                  stroke="var(--hairline)"
                 />
                 <XAxis
                   dataKey="label"
@@ -168,7 +168,7 @@ export default function HistoryChart({ data }: { data: HistoryPoint[] }) {
                 />
                 <Tooltip
                   content={<TooltipContent />}
-                  cursor={{ stroke: "rgba(255,255,255,0.1)" }}
+                  cursor={{ stroke: "var(--text-3)" }}
                 />
                 <Line
                   type="monotone"
