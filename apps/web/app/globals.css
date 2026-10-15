@@ -34,6 +34,8 @@
   --series-2: #eb6834;
   --series-3: #1baf7a;
   --series-sub: #a1a1aa;
+  /* Fond de la scène du spa (page jacuzzi). */
+  --spa-stage: radial-gradient(ellipse at 50% 30%, #ffffff 0%, #eaf3fa 55%, #d6e6f2 100%);
   --on-accent: #ffffff;
 }
 
@@ -62,6 +64,7 @@
   --series-2: #d95926;
   --series-3: #199e70;
   --series-sub: #71717a;
+  --spa-stage: radial-gradient(ellipse at 50% 35%, #1b2a3f 0%, #0b1220 55%, #070a12 100%);
 }
 
 html,

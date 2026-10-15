@@ -227,10 +227,11 @@ export default function JacuzziPage() {
             ) : undefined
           }
         >
-          {/* Scène : rendu isométrique du spa, toujours sur fond sombre. */}
+          {/* Scène : rendu isométrique du spa ; fond clair ou sombre selon le
+              thème (--spa-stage), le spa garde ses propres couleurs. */}
           <div
-            className="dark relative rounded-xl overflow-hidden aspect-[4/3] sm:aspect-[16/10]"
-            style={{ background: "radial-gradient(ellipse at 50% 35%, #1b2a3f 0%, #0b1220 55%, #070a12 100%)" }}
+            className="relative rounded-xl overflow-hidden aspect-[4/3] sm:aspect-[16/10] border"
+            style={{ background: "var(--spa-stage)", borderColor: "var(--card-border)" }}
           >
             <div className="absolute inset-x-[12%] top-[14%] bottom-[2%]">
               <IsoTub state={tub} />
@@ -404,7 +405,13 @@ export default function JacuzziPage() {
 
 function Callout({ className, label, value, tone }: { className: string; label: string; value: string; tone: string }) {
   return (
-    <div className={`absolute rounded-lg border border-white/10 bg-black/45 backdrop-blur px-3 py-1.5 ${className}`}>
+    <div
+      className={`absolute rounded-lg border backdrop-blur px-3 py-1.5 shadow-sm ${className}`}
+      style={{
+        background: "color-mix(in srgb, var(--card-solid) 82%, transparent)",
+        borderColor: "var(--card-border)",
+      }}
+    >
       <div className="text-[10px] uppercase tracking-wider text-zinc-400">{label}</div>
       <div className={`text-sm font-semibold ${tone}`}>{value}</div>
     </div>
