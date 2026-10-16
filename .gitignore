@@ -25,3 +25,6 @@ coverage/
 
 # Référence locale du firmware patience4711 (clone séparé)
 read-APSystems-YC600-QS1-DS3/
+
+# Copie ESPHome avec secrets en clair
+esphome/*.local.yaml
