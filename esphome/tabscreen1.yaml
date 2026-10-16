@@ -484,7 +484,7 @@ interval:
             - lvgl.label.update:
                 id: clock_label
                 text: !lambda |-
-                  static char buf[6];
+                  static char buf[8];
                   auto now = id(sntp_time).now();
                   snprintf(buf, sizeof(buf), "%02d:%02d", now.hour, now.minute);
                   return std::string(buf);
