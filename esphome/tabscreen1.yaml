@@ -362,7 +362,8 @@ lvgl:
               bg_opa: TRANSP
               text: "Watts"
 
-    # ── CARTE CONSOMMATION (fond rouge = achat, vert = injection)
+    # ── CARTE RESEAU (en gros : achat / injection ; en petit : conso)
+    #    Fond rouge = achat, vert = injection.
     - obj:
         id: consumption_card
         x: 245
@@ -376,14 +377,15 @@ lvgl:
         scrollable: false
         widgets:
           - label:
+              id: grid_title_label
               align: TOP_MID
               y: -6
               text_font: montserrat_14
               text_color: 0xFFFFFF
               bg_opa: TRANSP
-              text: "CONSOMMATION"
+              text: "RESEAU"
           - label:
-              id: consumption_label
+              id: grid_label
               align: CENTER
               y: 2
               text_font: montserrat_32
@@ -391,13 +393,13 @@ lvgl:
               bg_opa: TRANSP
               text: "--"
           - label:
-              id: grid_label
+              id: consumption_label
               align: BOTTOM_MID
               y: 6
               text_font: montserrat_12
               text_color: 0xC9D1D9
               bg_opa: TRANSP
-              text: "Watts"
+              text: "conso --"
 
     # ── CARTE BATTERIE ───────────────────────────────────
     - obj:
@@ -515,23 +517,27 @@ interval:
             return std::to_string(id(g_prod));
 
       - lvgl.label.update:
-          id: consumption_label
+          id: grid_title_label
           text: !lambda |-
             bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
-            if (stale) return std::string("--");
-            return std::to_string(id(g_conso));
+            if (stale) return std::string("RESEAU");
+            if (id(g_grid) > 30) return std::string("ACHAT RESEAU");
+            if (id(g_grid) < -30) return std::string("INJECTION");
+            return std::string("RESEAU");
 
       - lvgl.label.update:
           id: grid_label
           text: !lambda |-
             bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return std::string("--");
+            return std::to_string(abs(id(g_grid))) + " W";
+
+      - lvgl.label.update:
+          id: consumption_label
+          text: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
             if (stale) return std::string("appli injoignable");
-            char buf[32];
-            int g = id(g_grid);
-            if (g > 30) snprintf(buf, sizeof(buf), "achat reseau %d W", g);
-            else if (g < -30) snprintf(buf, sizeof(buf), "injection %d W", -g);
-            else snprintf(buf, sizeof(buf), "Watts");
-            return std::string(buf);
+            return "conso " + std::to_string(id(g_conso)) + " W";
 
       - lvgl.widget.update:
           id: consumption_card
