@@ -6,7 +6,7 @@ import { log } from "../log.js";
 const SILENT_TIMEOUT_MS = 20 * 60_000; // ECU officielle : 1 relevé / 5 min
 const AC_MIN_V = 100;
 const PEER_IMBALANCE_PCT = 25;
-const PEER_MIN_W = 50; // sous ce seuil on ne compare pas (bruit)
+const PEER_MIN_W = 150; // sous ce seuil on ne compare pas (ombre passagère, faible ensoleillement)
 const TEMP_HIGH_C = 75;
 const FREQ_MIN_HZ = 49.5;
 const FREQ_MAX_HZ = 50.5;
@@ -121,24 +121,28 @@ async function runHealthChecks(
     for (let i = 0; i + 1 < msg.panels.length; i += 2) {
       const a = msg.panels[i];
       const b = msg.panels[i + 1];
-      if (typeof a.pW === "number" && typeof b.pW === "number") {
-        const max = Math.max(a.pW, b.pW);
-        const min = Math.min(a.pW, b.pW);
-        if (max >= PEER_MIN_W) {
-          const gapPct = ((max - min) / max) * 100;
-          if (gapPct > PEER_IMBALANCE_PCT) {
-            await raiseAlert({
-              deviceId: device.id,
-              panelIndex: a.pW < b.pW ? a.panelIndex : b.panelIndex,
-              kind: "PEER_IMBALANCE",
-              severity: "WARN",
-              message: `Déséquilibre panneaux ${a.panelIndex}/${b.panelIndex} : ${a.pW} W vs ${b.pW} W (${gapPct.toFixed(0)} %)`,
-              detail: { a: a.pW, b: b.pW, gapPct },
-            });
-          } else {
-            await resolveAlert(device.id, "PEER_IMBALANCE", null);
-          }
-        }
+      if (!a || !b || typeof a.pW !== "number" || typeof b.pW !== "number") continue;
+      const max = Math.max(a.pW, b.pW);
+      const min = Math.min(a.pW, b.pW);
+      const gapPct = max > 0 ? ((max - min) / max) * 100 : 0;
+      // L'alerte porte le panneau le plus faible : on la lève sur lui et on
+      // ferme celle de son jumeau ; sous le seuil de puissance (matin,
+      // soir, nuages) ou une fois équilibrés, on ferme les deux.
+      const weak = a.pW < b.pW ? a : b;
+      const strong = weak === a ? b : a;
+      if (max >= PEER_MIN_W && gapPct > PEER_IMBALANCE_PCT) {
+        await raiseAlert({
+          deviceId: device.id,
+          panelIndex: weak.panelIndex,
+          kind: "PEER_IMBALANCE",
+          severity: "WARN",
+          message: `Déséquilibre panneaux ${a.panelIndex + 1}/${b.panelIndex + 1} : ${a.pW} W vs ${b.pW} W (${gapPct.toFixed(0)} %)`,
+          detail: { a: a.pW, b: b.pW, gapPct },
+        });
+        await resolveAlert(device.id, "PEER_IMBALANCE", strong.panelIndex);
+      } else {
+        await resolveAlert(device.id, "PEER_IMBALANCE", a.panelIndex);
+        await resolveAlert(device.id, "PEER_IMBALANCE", b.panelIndex);
       }
     }
   }

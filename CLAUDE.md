@@ -504,7 +504,7 @@ Format du payload `data` (validé Zod dans `packages/shared/src/apsystems.ts`) :
 | Kind | Seuil | Severity | Resolve auto |
 |---|---|---|---|
 | `INVERTER_SILENT` | dernière trame > 10 min | CRITICAL | oui (à la prochaine trame) |
-| `PEER_IMBALANCE` | écart panneaux jumeaux > 25 % et `max ≥ 50 W` | WARN | oui |
+| `PEER_IMBALANCE` | écart panneaux jumeaux > 25 % et `max ≥ 150 W` | WARN | oui |
 | `OVER_TEMPERATURE` | `tempC > 75` | WARN | oui |
 | `GRID_FREQ_OUT` | `acHz` ∉ [49.5, 50.5] | CRITICAL | oui |
 | `WEAK_SIGNAL` | `signalDb < -85` dBm | INFO | oui |
