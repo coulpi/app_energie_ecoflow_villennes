@@ -4,7 +4,7 @@ import type { InverterCard } from "./SolarDashboard";
 
 // Disposition physique des panneaux (de gauche à droite, vue de face).
 // 1 micro-onduleur DS3 = 2 panneaux (panelIndex 0 à gauche, 1 à droite).
-const ARRAYS: Array<{ title: string; kind: "ground" | "roof"; sns: string[] }> = [
+export const ARRAYS: Array<{ title: string; kind: "ground" | "roof"; sns: string[] }> = [
   { title: "Jardin · au sol", kind: "ground", sns: ["703000201323", "703000724293", "703000728874"] },
   { title: "Abri · toiture", kind: "roof", sns: ["703000988780", "703000198170", "703000197256"] },
 ];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import SolarLayout from "./SolarLayout";
+import SolarLayout, { ARRAYS } from "./SolarLayout";
 import {
   Area,
   AreaChart,
@@ -375,6 +375,18 @@ function InverterPanel({
   );
 }
 
+/** Fiches regroupées par zone du schéma, dans l'ordre physique ; le reste à la fin. */
+function groupByArray(inverters: InverterCard[]) {
+  const bySn = new Map(inverters.map((i) => [i.sn, i]));
+  const groups = ARRAYS.map((a) => ({
+    title: a.title,
+    inverters: a.sns.flatMap((sn) => bySn.get(sn) ?? []),
+  }));
+  const placed = new Set(ARRAYS.flatMap((a) => a.sns));
+  groups.push({ title: "Hors schéma", inverters: inverters.filter((i) => !placed.has(i.sn)) });
+  return groups.filter((g) => g.inverters.length > 0);
+}
+
 export default function SolarDashboard({ inverters, series, alerts }: Props) {
   const totalW = inverters.reduce(
     (acc, inv) => acc + inv.panels.reduce((a, p) => a + (p.pW ?? 0), 0),
@@ -460,13 +472,25 @@ export default function SolarDashboard({ inverters, series, alerts }: Props) {
           </div>
         </div>
       ) : (
-        <div className="space-y-5">
-          {inverters.map((inv) => (
-            <InverterPanel
-              key={inv.id}
-              inv={inv}
-              series={series.find((s) => s.inverterId === inv.id)}
-            />
+        <div className="space-y-6">
+          {groupByArray(inverters).map((g) => (
+            <div key={g.title} className="space-y-3">
+              <h2 className="text-sm font-semibold text-zinc-400 px-1">
+                {g.title}
+                {g.title !== "Hors schéma" && (
+                  <span className="text-zinc-500 font-normal"> · gauche → droite</span>
+                )}
+              </h2>
+              <div className="space-y-5">
+                {g.inverters.map((inv) => (
+                  <InverterPanel
+                    key={inv.id}
+                    inv={inv}
+                    series={series.find((s) => s.inverterId === inv.id)}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
