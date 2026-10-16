@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+// NB : z.coerce.boolean() fait Boolean("0") / Boolean("false") === true
+// (toute chaîne non vide) → APSYSTEMS_MOCK=0 activait le mock.
+const envBool = z.preprocess(
+  (v) => (typeof v === "string" ? ["1", "true", "yes", "on"].includes(v.trim().toLowerCase()) : v),
+  z.boolean(),
+);
+
 const Schema = z.object({
   DATABASE_URL: z.string().url(),
   ECOFLOW_ACCESS_KEY: z.string().min(1).optional(),
@@ -17,7 +24,7 @@ const Schema = z.object({
   OLLAMA_BASE_URL: z.string().url().default("http://localhost:11434"),
   OLLAMA_MODEL: z.string().default("gemma4:31b"),
   AGENT_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
-  AGENT_ENABLED: z.coerce.boolean().default(true),
+  AGENT_ENABLED: envBool.default(true),
   BATTERY_CRITICAL_SOC: z.coerce.number().min(0).max(100).default(5),
   HOME_LAT: z.coerce.number().default(48.9436),
   HOME_LON: z.coerce.number().default(1.993),
@@ -30,14 +37,18 @@ const Schema = z.object({
   APSYSTEMS_MQTT_USER: z.string().optional(),
   APSYSTEMS_MQTT_PASSWORD: z.string().optional(),
   APSYSTEMS_TOPIC_PREFIX: z.string().default("apsystems"),
-  APSYSTEMS_MOCK: z.coerce.boolean().default(false),
+  APSYSTEMS_MOCK: envBool.default(false),
   APSYSTEMS_MOCK_INTERVAL_S: z.coerce.number().int().positive().default(15),
+  // ECU officielle APSystems (ex. http://192.168.0.127) : lecture de sa page
+  // /index.php/realtimedata. Vide = poller ECU off.
+  APSYSTEMS_ECU_URL: z.string().optional(),
+  APSYSTEMS_ECU_INTERVAL_S: z.coerce.number().int().positive().default(120),
   // Jacuzzi Intex : module Wi-Fi local sur port TCP 8990. Si
   // INTEX_SPA_HOST vide ou INTEX_SPA_ENABLED=false, le poller et la
   // boucle de pilotage ne demarrent pas.
   INTEX_SPA_HOST: z.string().optional(),
   INTEX_SPA_PORT: z.coerce.number().int().positive().default(8990),
-  INTEX_SPA_ENABLED: z.coerce.boolean().default(false),
+  INTEX_SPA_ENABLED: envBool.default(false),
 });
 
 export const env = Schema.parse(process.env);

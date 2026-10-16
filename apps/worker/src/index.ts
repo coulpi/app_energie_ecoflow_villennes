@@ -27,6 +27,7 @@ import {
   startApsystemsMock,
   startApsystemsHealthLoop,
 } from "./pollers/apsystems.js";
+import { startApsystemsEcuPoller } from "./pollers/apsystems-ecu.js";
 import { startRollupScheduler } from "./jobs/rollup.js";
 import { startRulesEngine } from "./rules/engine.js";
 import { startFollowLoadLoop } from "./rules/follow-load.js";
@@ -84,6 +85,9 @@ async function main() {
         error: (e as Error).message,
       });
     }
+  }
+  if (env.APSYSTEMS_ECU_URL) {
+    startApsystemsEcuPoller(env.APSYSTEMS_ECU_URL, env.APSYSTEMS_ECU_INTERVAL_S);
   }
   startApsystemsHealthLoop();
 

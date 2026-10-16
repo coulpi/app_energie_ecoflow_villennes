@@ -3,7 +3,8 @@ import { prisma } from "../db.js";
 import { env } from "../env.js";
 import { log } from "../log.js";
 
-const SILENT_TIMEOUT_MS = 10 * 60_000;
+const SILENT_TIMEOUT_MS = 20 * 60_000; // ECU officielle : 1 relevé / 5 min
+const AC_MIN_V = 100;
 const PEER_IMBALANCE_PCT = 25;
 const PEER_MIN_W = 50; // sous ce seuil on ne compare pas (bruit)
 const TEMP_HIGH_C = 75;
@@ -79,8 +80,18 @@ async function runHealthChecks(
     await resolveAlert(device.id, "OVER_TEMPERATURE", null);
   }
 
-  // 2. Fréquence AC hors plage
-  if (msg.acHz !== null && (msg.acHz < FREQ_MIN_HZ || msg.acHz > FREQ_MAX_HZ)) {
+  // 2. Pas de tension réseau (panneaux alimentés mais onduleur non
+  //    raccordé côté AC : disjoncteur, câble de liaison…). La fréquence
+  //    remontée est alors fantaisiste, on ne la commente pas.
+  if (msg.acV !== null && msg.acV < AC_MIN_V) {
+    await raiseAlert({
+      deviceId: device.id,
+      kind: "GRID_FREQ_OUT",
+      severity: "CRITICAL",
+      message: `${device.name} : pas de tension réseau AC (${Math.round(msg.acV)} V), n'injecte pas`,
+      detail: { acV: msg.acV, acHz: msg.acHz },
+    });
+  } else if (msg.acHz !== null && (msg.acHz < FREQ_MIN_HZ || msg.acHz > FREQ_MAX_HZ)) {
     await raiseAlert({
       deviceId: device.id,
       kind: "GRID_FREQ_OUT",
@@ -140,11 +151,20 @@ export async function checkSilentInverters(): Promise<void> {
     where: { enabled: true, type: "APSYSTEMS_INVERTER" },
   });
   const since = new Date(Date.now() - SILENT_TIMEOUT_MS);
-  for (const d of devices) {
-    const last = await prisma.solarPanelReading.findFirst({
-      where: { deviceId: d.id },
-      orderBy: { ts: "desc" },
-    });
+  const lasts = await Promise.all(
+    devices.map((d) =>
+      prisma.solarPanelReading.findFirst({
+        where: { deviceId: d.id },
+        orderBy: { ts: "desc" },
+        select: { ts: true },
+      }),
+    ),
+  );
+  // Personne n'a émis (nuit, passerelle/ECU coupée) : ce n'est pas un
+  // onduleur en particulier qui est muet, on ne lève rien.
+  if (!lasts.some((l) => l && l.ts >= since)) return;
+  for (const [i, d] of devices.entries()) {
+    const last = lasts[i];
     if (!last || last.ts < since) {
       await raiseAlert({
         deviceId: d.id,
