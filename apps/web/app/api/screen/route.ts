@@ -61,8 +61,35 @@ async function currentWeather(): Promise<{ temp: number | null; state: string }>
 const int = (v: number | null | undefined) =>
   v === null || v === undefined || Number.isNaN(v) ? null : Math.round(v);
 
+const WORKER = process.env.WORKER_INTERNAL_URL ?? "http://worker:3100";
+
+interface JacuzziState {
+  reachable?: boolean;
+  currentTempC?: number | null;
+  presetTempC?: number | null;
+  heaterOn?: boolean | null;
+  filterOn?: boolean | null;
+  plug?: { powerW?: number | null } | null;
+}
+
+async function jacuzzi(): Promise<JacuzziState | null> {
+  try {
+    const r = await fetch(`${WORKER}/jacuzzi/state`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(3_000),
+    });
+    return r.ok ? ((await r.json()) as JacuzziState) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Booléen → 1 / 0, inconnu → -1.
+const tri = (b: boolean | null | undefined) => (b === true ? 1 : b === false ? 0 : -1);
+
 export async function GET() {
-  const [s, w] = await Promise.all([getDashboardSnapshot(), currentWeather()]);
+  const [s, w, j] = await Promise.all([getDashboardSnapshot(), currentWeather(), jacuzzi()]);
+  const jOk = j?.reachable === true;
   const soc = int(s.batterySoc);
   return NextResponse.json(
     {
@@ -76,6 +103,12 @@ export async function GET() {
       tempo_dem: s.tempoColorTomorrow ?? "",
       temp: w.temp === null ? -99 : Math.round(w.temp * 10) / 10,
       meteo: w.state,
+      // Jacuzzi (-99 / -1 si injoignable).
+      jac_t: jOk && typeof j?.currentTempC === "number" ? j.currentTempC : -99,
+      jac_c: jOk && typeof j?.presetTempC === "number" ? j.presetTempC : -99,
+      jac_h: jOk ? tri(j?.heaterOn) : -1,
+      jac_f: jOk ? tri(j?.filterOn) : -1,
+      jac_w: Math.max(0, int(j?.plug?.powerW) ?? 0),
     },
     { headers: { "Cache-Control": "no-store" } },
   );
