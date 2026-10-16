@@ -55,8 +55,14 @@ case "$MODE" in
     info "Compilation + installation OTA de $NODE sur $DEVICE_IP (ESPHome $ESPHOME_VERSION)"
     run_esphome run "$NODE.yaml" --device "$DEVICE_IP" --no-logs
     info "Logs pendant 30 s"
-    timeout 30 docker run --rm --network host -v "$CFG_DIR":/config \
-      "ghcr.io/esphome/esphome:$ESPHOME_VERSION" logs "$NODE.yaml" --device "$DEVICE_IP" || true
+    # NB : `timeout docker run` n'arrête que le client, le conteneur continue :
+    # conteneur nommé, détaché, puis supprimé.
+    docker rm -f esphome-deploy-logs >/dev/null 2>&1 || true
+    docker run -d --name esphome-deploy-logs --network host -v "$CFG_DIR":/config \
+      "ghcr.io/esphome/esphome:$ESPHOME_VERSION" logs "$NODE.yaml" --device "$DEVICE_IP" >/dev/null
+    sleep 30
+    docker logs esphome-deploy-logs 2>&1 | grep -E "ESPHome version|SSID|\[W\]|\[E\]|Received response" | tail -15 || true
+    docker rm -f esphome-deploy-logs >/dev/null
     ;;
   *)
     err "mode inconnu : $MODE (run | compile | logs)"
