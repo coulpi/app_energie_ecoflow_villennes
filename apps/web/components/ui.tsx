@@ -137,24 +137,29 @@ export function ShareRow({
   value,
   pct,
   accent,
+  sub = false,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
   pct: number;
   accent: Accent;
+  /** Sous-ligne (détail d'un réseau) : en retrait, plus discrète. */
+  sub?: boolean;
 }) {
   const a = ACCENT[accent];
   const p = Math.max(0, Math.min(100, pct));
   return (
-    <div className="flex items-center gap-3 py-1.5">
-      <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${a.icon}`}>
-        <span className="w-4 h-4">{icon}</span>
+    <div className={`flex items-center gap-3 ${sub ? "pl-11 py-1" : "py-1.5"}`}>
+      <span
+        className={`${sub ? "w-6 h-6 rounded-md" : "w-8 h-8 rounded-lg"} flex items-center justify-center shrink-0 ${a.icon}`}
+      >
+        <span className={sub ? "w-3.5 h-3.5" : "w-4 h-4"}>{icon}</span>
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm text-zinc-200 flex-1 min-w-0 truncate">{label}</span>
-          <span className="text-sm font-semibold tabular-nums text-zinc-100 shrink-0">{value}</span>
+          <span className={`flex-1 min-w-0 truncate ${sub ? "text-xs text-zinc-400" : "text-sm text-zinc-200"}`}>{label}</span>
+          <span className={`tabular-nums shrink-0 ${sub ? "text-xs font-medium text-zinc-300" : "text-sm font-semibold text-zinc-100"}`}>{value}</span>
           <span className="text-xs text-zinc-500 tabular-nums w-9 text-right shrink-0">{Math.round(p)} %</span>
         </div>
         <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--track)" }}>

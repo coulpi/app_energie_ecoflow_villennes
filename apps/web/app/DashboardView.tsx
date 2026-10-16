@@ -91,9 +91,26 @@ export default function DashboardView({
 
   // Répartition instantanée par réseau / circuit (W).
   const measured = loads.filter((p) => p.source === "measured" && p.currentlyOn);
-  const total = consumption + Math.max(0, aux ?? 0);
-  const pct = (w: number) => (total > 0 ? (w / total) * 100 : 0);
+  const auxW = Math.max(0, aux ?? 0);
+  const share = (w: number, of: number) => (of > 0 ? (w / of) * 100 : 0);
+  const pct = (w: number) => share(w, consumption + auxW);
   const batteryCharge = Math.max(0, s.acSwitchPowerW ?? 0);
+  // Charge mesurée affichée en sous-ligne de son réseau : % de ce réseau.
+  const loadRow = (p: FlowLoad, networkW: number) => {
+    const w = loadPower(p);
+    const f = fmtPower(w);
+    return (
+      <ShareRow
+        sub
+        key={p.id}
+        icon={/voiture|borne|\bev\b|car/i.test(p.name) ? Icon.car : isAuxLoad(p) ? Icon.pool : Icon.plug}
+        label={p.name}
+        value={`${f.value} ${f.unit}`}
+        pct={share(w, networkW)}
+        accent={isAuxLoad(p) ? "aux" : "home"}
+      />
+    );
+  };
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-[1500px] mx-auto">
@@ -211,33 +228,22 @@ export default function DashboardView({
         <div className="space-y-4 sm:space-y-5 min-w-0">
           <Section title="Répartition par réseau / circuit" sub="Puissance instantanée">
             <ShareRow icon={Icon.home} label="Réseau 1 · maison" value={`${cons.value} ${cons.unit}`} pct={pct(consumption)} accent="home" />
+            {measured.filter((p) => !isAuxLoad(p)).map((p) => loadRow(p, consumption))}
             <ShareRow
               icon={Icon.pool}
               label="Réseau 2 · piscine, jacuzzi, PAC, voiture"
               value={`${auxP.value} ${auxP.unit}`}
-              pct={pct(Math.max(0, aux ?? 0))}
+              pct={pct(auxW)}
               accent="aux"
             />
-            {measured.map((p) => {
-              const w = loadPower(p);
-              const f = fmtPower(w);
-              return (
-                <ShareRow
-                  key={p.id}
-                  icon={/voiture|borne|\bev\b|car/i.test(p.name) ? Icon.car : isAuxLoad(p) ? Icon.pool : Icon.plug}
-                  label={`${p.name} · R${isAuxLoad(p) ? 2 : 1}`}
-                  value={`${f.value} ${f.unit}`}
-                  pct={pct(w)}
-                  accent={isAuxLoad(p) ? "aux" : "home"}
-                />
-              );
-            })}
+            {measured.filter(isAuxLoad).map((p) => loadRow(p, auxW))}
             {batteryCharge > 30 && (
               <ShareRow
+                sub
                 icon={Icon.battery}
-                label="Charge batterie · R2"
+                label="Charge batterie"
                 value={`${fmtPower(batteryCharge).value} ${fmtPower(batteryCharge).unit}`}
-                pct={pct(batteryCharge)}
+                pct={share(batteryCharge, auxW)}
                 accent="battery"
               />
             )}
