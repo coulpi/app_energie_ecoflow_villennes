@@ -242,6 +242,63 @@ function captureSlowChg(payload: unknown): void {
   }
 }
 
+// ── Écriture des mesures MQTT limitée à 1 ligne / 30 s / batterie ──
+// Le BMS pousse un message toutes les ~0,6 s (≈ 134 000 lignes/jour, 80 %
+// de la table Reading). On fusionne les messages de la fenêtre (certains
+// n'apportent que le SoC, d'autres que la puissance) et on écrit au plus
+// une ligne toutes les 30 s, comme les autres compteurs. Une écriture
+// différée garantit que la dernière valeur reçue finit en base.
+const MQTT_WRITE_INTERVAL_MS = 30_000;
+
+interface PendingReading {
+  powerW: number | null;
+  soc: number | null;
+  raw: object;
+}
+const mqttWrites = new Map<
+  string,
+  { lastWriteMs: number; pending: PendingReading | null; timer: NodeJS.Timeout | null }
+>();
+
+async function flushMqttReading(deviceId: string): Promise<void> {
+  const s = mqttWrites.get(deviceId);
+  if (!s?.pending) return;
+  const { powerW, soc, raw } = s.pending;
+  s.pending = null;
+  s.lastWriteMs = Date.now();
+  await prisma.reading.create({
+    data: { deviceId, ts: new Date(), powerW, soc, raw },
+  });
+}
+
+async function recordMqttReading(
+  deviceId: string,
+  powerW: number | null,
+  soc: number | null,
+  raw: object,
+): Promise<void> {
+  const s = mqttWrites.get(deviceId) ?? { lastWriteMs: 0, pending: null, timer: null };
+  mqttWrites.set(deviceId, s);
+  s.pending = {
+    powerW: powerW ?? s.pending?.powerW ?? null,
+    soc: soc ?? s.pending?.soc ?? null,
+    raw,
+  };
+  const wait = s.lastWriteMs + MQTT_WRITE_INTERVAL_MS - Date.now();
+  if (wait <= 0) {
+    if (s.timer) clearTimeout(s.timer);
+    s.timer = null;
+    await flushMqttReading(deviceId);
+  } else if (!s.timer) {
+    s.timer = setTimeout(() => {
+      s.timer = null;
+      flushMqttReading(deviceId).catch((e) =>
+        log.warn("ecoflow mqtt deferred write failed", { error: (e as Error).message }),
+      );
+    }, wait);
+  }
+}
+
 async function handlePrivateMessage(
   batteries: Battery[],
   sn: string,
@@ -268,15 +325,7 @@ async function handlePrivateMessage(
     } else if (metrics.outputW !== null || metrics.inputW !== null) {
       powerW = 0;
     }
-    await prisma.reading.create({
-      data: {
-        deviceId: device.id,
-        ts: new Date(),
-        powerW,
-        soc: metrics.soc,
-        raw: payload as object,
-      },
-    });
+    await recordMqttReading(device.id, powerW, metrics.soc, payload as object);
   } catch (e) {
     log.warn("ecoflow private mqtt msg failed", {
       sn,
@@ -424,15 +473,7 @@ export async function startEcoFlowMqtt(): Promise<void> {
         ) {
           return;
         }
-        await prisma.reading.create({
-          data: {
-            deviceId: device.id,
-            ts: new Date(),
-            powerW,
-            soc: metrics.soc,
-            raw: payload as object,
-          },
-        });
+        await recordMqttReading(device.id, powerW, metrics.soc, payload as object);
       } catch (e) {
         log.warn("ecoflow mqtt message handling failed", {
           sn,
