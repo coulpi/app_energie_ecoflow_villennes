@@ -1490,7 +1490,7 @@ interval:
           id: jac_heat_label
           text: !lambda |-
             int h = id(g_jac_h);
-            return std::string(h == 1 ? "Chauffe ON" : h == 0 ? "Chauffe OFF" : "Chauffe --");
+            return std::string(h == 1 ? "Chauffe ON" : h == 2 ? "Maintien" : h == 0 ? "Chauffe OFF" : "Chauffe --");
           text_color: !lambda |-
             return id(g_jac_h) == 1 ? lv_color_hex(0xF0883E) : lv_color_hex(0x8B949E);
       - lvgl.label.update:

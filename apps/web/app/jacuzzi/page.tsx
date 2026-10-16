@@ -148,9 +148,16 @@ export default function JacuzziPage() {
   const offline = !s.reachable;
   const cur = s.currentTempC;
   const preset = s.presetTempC;
-  const heating = s.heaterOn === true;
-  const ready = s.power === true && cur !== null && preset !== null && cur >= preset - 0.5;
   const plugW = s.plug.powerW;
+  // Le bit « heater » Intex = mode chauffage ACTIVÉ (thermostat), pas la
+  // résistance en marche : consigne atteinte, il reste à ON alors que la
+  // prise ne tire que la filtration (~40 W). La résistance (~2 kW) n'est
+  // donc « active » que si la prise le mesure. Sans mesure, on se fie au bit.
+  const HEATER_MIN_W = 500;
+  const heaterArmed = s.heaterOn === true;
+  const heating = heaterArmed && (plugW === null || plugW >= HEATER_MIN_W);
+  const holding = heaterArmed && !heating; // thermostat : température maintenue
+  const ready = s.power === true && cur !== null && preset !== null && cur >= preset - 0.5;
   const pw = fmtPower(plugW);
   const status = offline
     ? { label: "Hors ligne", cls: "border-rose-500/40 bg-rose-500/[0.07] text-rose-400" }
@@ -205,7 +212,7 @@ export default function JacuzziPage() {
         <KpiCard label="Température eau" value={fmtTemp(cur)} unit="°C" icon={Icon.gauge} accent="grid" sub={preset !== null && cur !== null ? `${cur >= preset ? "+" : ""}${(cur - preset).toFixed(1)} °C vs cible` : undefined} />
         <KpiCard label="Température cible" value={preset === null ? "—" : String(preset)} unit="°C" icon={Icon.gauge} accent="import" sub={`Plage ${TEMP_MIN}–${TEMP_MAX} °C`} />
         <KpiCard label="Conso électrique" value={pw.value} unit={pw.unit} icon={Icon.bolt} accent="solar" sub={hist ? `Aujourd'hui ${fmtKWh(hist.todayWh)}` : s.plug.name ?? undefined} />
-        <KpiCard label="Chauffage" value={heating ? "En chauffe" : "Arrêt"} icon={Icon.fan} accent={heating ? "cost" : "neutral"} valueAccent={heating} sub={heating ? "résistance active" : undefined} />
+        <KpiCard label="Chauffage" value={heating ? "En chauffe" : holding ? "Maintien" : "Arrêt"} icon={Icon.fan} accent={heating ? "cost" : "neutral"} valueAccent={heating} sub={heating ? "résistance active" : holding ? "consigne atteinte, résistance au repos" : undefined} />
         <KpiCard label="Filtration" value={s.filterOn ? "En cours" : "Arrêt"} icon={Icon.fan} accent="aux" valueAccent={s.filterOn === true} />
         <KpiCard label="Pilotage" value={pilotLabel} icon={Icon.leaf} accent="home" valueAccent sub={s.ctrl.jacuzziEnabled ? "chauffe sur surplus solaire" : "commande manuelle"} />
         <KpiCard label="Connexion" value={offline ? "Hors ligne" : "En ligne"} icon={Icon.plug} accent={offline ? "import" : "home"} valueAccent sub={s.failureCount > 0 ? `${s.failureCount} échec(s)` : "module Wi-Fi Intex"} />
@@ -237,7 +244,7 @@ export default function JacuzziPage() {
               <IsoTub state={tub} />
             </div>
             <Callout className="left-3 top-3" label="Température eau" value={`${fmtTemp(cur)} °C`} tone="text-sky-300" />
-            <Callout className="right-3 top-3" label="Chauffage" value={heating ? "En chauffe" : "Arrêt"} tone={heating ? "text-orange-300" : "text-zinc-400"} />
+            <Callout className="right-3 top-3" label="Chauffage" value={heating ? "En chauffe" : holding ? "Maintien" : "Arrêt"} tone={heating ? "text-orange-300" : "text-zinc-400"} />
             <Callout className="left-3 bottom-3 hidden sm:block" label="Filtration" value={s.filterOn ? "En marche" : "Arrêt"} tone={s.filterOn ? "text-cyan-300" : "text-zinc-400"} />
             <Callout className="right-3 bottom-3 hidden sm:block" label="Jets / bulles" value={s.jetsOn || s.bubblesOn ? "Activés" : "Arrêt"} tone={s.jetsOn || s.bubblesOn ? "text-violet-300" : "text-zinc-400"} />
             <Callout className="left-1/2 -translate-x-1/2 top-3 hidden md:block" label="Prise" value={`${pw.value} ${pw.unit}`} tone="text-amber-300" />

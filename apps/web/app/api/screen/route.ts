@@ -108,7 +108,16 @@ export async function GET(req: Request) {
       // Jacuzzi (-99 / -1 si injoignable).
       jac_t: jOk && typeof j?.currentTempC === "number" ? j.currentTempC : -99,
       jac_c: jOk && typeof j?.presetTempC === "number" ? j.presetTempC : -99,
-      jac_h: jOk ? tri(j?.heaterOn) : -1,
+      // 1 = résistance en chauffe (prise ≥ 500 W), 2 = maintien (mode chauffage
+      // activé, consigne atteinte, résistance au repos), 0 = arrêt, -1 = inconnu.
+      // Le bit heaterOn Intex seul ne dit pas si la résistance chauffe.
+      jac_h: !jOk
+        ? -1
+        : j?.heaterOn !== true
+          ? tri(j?.heaterOn)
+          : typeof j?.plug?.powerW === "number" && j.plug.powerW < 500
+            ? 2
+            : 1,
       jac_f: jOk ? tri(j?.filterOn) : -1,
       jac_w: Math.max(0, int(j?.plug?.powerW) ?? 0),
     },

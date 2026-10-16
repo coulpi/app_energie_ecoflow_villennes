@@ -326,7 +326,7 @@ function Page2({ d, chart, now }: { d: Live | null; chart: Chart | null; now: Da
         {d && d.jac_c > -98 ? `consigne ${Math.round(d.jac_c)}°C` : "consigne --°C"}
       </T>
       <T x={260} y={76} size={18} color={heat === 1 ? C.orange : C.muted}>
-        {heat === 1 ? "Chauffe ON" : heat === 0 ? "Chauffe OFF" : "Chauffe --"}
+        {heat === 1 ? "Chauffe ON" : heat === 2 ? "Maintien" : heat === 0 ? "Chauffe OFF" : "Chauffe --"}
       </T>
       <T x={260} y={110} size={18} color={filt === 1 ? C.green : C.muted}>
         {filt === 1 ? "Filtration ON" : filt === 0 ? "Filtration OFF" : "Filtration --"}
