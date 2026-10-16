@@ -1,5 +1,7 @@
+import Link from "next/link";
+import { isNetwork2 } from "@/lib/networks";
 import { prisma } from "@/lib/prisma";
-import HistoryChart, { type HistoryPoint } from "./HistoryChart";
+import HistoryChart, { type HistoryPoint, type NetFilter } from "./HistoryChart";
 import AppliancesChart, { type AppliancePoint } from "./AppliancesChart";
 import AppliancesHourlyChart, {
   type ApplianceHourlyPoint,
@@ -32,7 +34,30 @@ function dayLabel(key: string): string {
   return `${dd}/${mm}`;
 }
 
-export default async function HistoryPage() {
+// Réseau d'un appareil (même table que lib/dashboard.ts) ; null = batterie,
+// rattachée aux deux (charge par le réseau 2, décharge vers le réseau 1).
+const ROLE_NETWORK: Record<string, 1 | 2 | null> = {
+  GRID_METER: 1,
+  CONSUMPTION_METER: 1,
+  PRODUCTION_METER: 1,
+  SOLAR_INVERTER: 1,
+  POWERSTREAM: 1,
+  AUX_NETWORK_METER: 2,
+  BATTERY_AC_SWITCH: 2,
+  BATTERY: null,
+};
+const networkOf = (d: { role: string; name: string }): 1 | 2 | null =>
+  d.role === "APPLIANCE" ? (isNetwork2(d.name) ? 2 : 1) : (ROLE_NETWORK[d.role] ?? null);
+
+export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ n?: string }>;
+}) {
+  const { n } = await searchParams;
+  const net: NetFilter = n === "1" || n === "2" ? n : "all";
+  const inNet = (k: 1 | 2 | null) => net === "all" || (k !== null && String(k) === net);
+
   const since = new Date(Date.now() - 7 * 86_400_000);
   const rows = await prisma.readingHourly.findMany({
     where: { hourTs: { gte: since } },
@@ -40,25 +65,54 @@ export default async function HistoryPage() {
     orderBy: [{ hourTs: "asc" }],
   });
 
-  // Agrégation par heure : somme prod/conso, moyenne SoC.
-  const byHour = new Map<
-    string,
-    { ts: Date; prod: number; conso: number; socSum: number; socCount: number }
-  >();
+  // Agrégation par heure, par réseau (même bilan que le tableau de bord et
+  // les coûts) :
+  //   réseau 1 = solaire autoconsommé + décharge batterie + achat réseau 1
+  //   réseau 2 = compteur du réseau 2 (piscine, jacuzzi, PAC, voiture).
+  // NB : on n'additionne plus les consoWh de toutes les prises — la prise
+  // jacuzzi et la prise AC batterie sont sur le réseau 2 et gonflaient la
+  // conso « maison ».
+  interface Slot {
+    ts: Date;
+    prod: number;
+    imp1: number;
+    exp1: number;
+    dsg: number;
+    conso2: number;
+    socSum: number;
+    socCount: number;
+  }
+  const byHour = new Map<string, Slot>();
   for (const r of rows) {
     const key = r.hourTs.toISOString();
     const slot = byHour.get(key) ?? {
       ts: r.hourTs,
       prod: 0,
-      conso: 0,
+      imp1: 0,
+      exp1: 0,
+      dsg: 0,
+      conso2: 0,
       socSum: 0,
       socCount: 0,
     };
-    if (r.prodWh) slot.prod += r.prodWh;
-    // Le réseau piscine/jacuzzi est indépendant : il a sa propre courbe
-    // (conso par équipement) et ne gonfle pas la conso maison.
-    if (r.consoWh && r.device.role !== "AUX_NETWORK_METER")
-      slot.conso += r.consoWh;
+    const avg = r.avgPowerW;
+    switch (r.device.role) {
+      case "PRODUCTION_METER":
+        slot.prod += r.prodWh ?? 0;
+        break;
+      case "GRID_METER":
+        // Heures antérieures à importWh/exportWh : moyenne nette signée.
+        slot.imp1 += r.importWh ?? (avg !== null ? Math.max(0, avg) : 0);
+        slot.exp1 += r.exportWh ?? (avg !== null ? Math.max(0, -avg) : 0);
+        break;
+      case "BATTERY":
+        // powerW batterie : + = décharge vers la maison (PowerStream).
+        if (avg !== null) slot.dsg += Math.max(0, avg);
+        break;
+      case "AUX_NETWORK_METER":
+        slot.conso2 += r.consoWh ?? r.importWh ?? (avg !== null ? Math.max(0, avg) : 0);
+        break;
+    }
     if (r.minSoc !== null && r.maxSoc !== null) {
       slot.socSum += (r.minSoc + r.maxSoc) / 2;
       slot.socCount += 1;
@@ -72,13 +126,28 @@ export default async function HistoryPage() {
       ts: s.ts.toISOString(),
       label: fmtLabel(s.ts),
       prodWh: Math.round(s.prod),
-      consoWh: Math.round(s.conso),
+      conso1Wh: Math.round(Math.max(0, s.prod - s.exp1) + s.dsg + s.imp1),
+      import1Wh: Math.round(s.imp1),
+      conso2Wh: Math.round(s.conso2),
       soc: s.socCount > 0 ? Math.round(s.socSum / s.socCount) : null,
     }));
 
-  // Bilans 7 jours
-  const totalProd = points.reduce((acc, p) => acc + p.prodWh, 0);
-  const totalConso = points.reduce((acc, p) => acc + p.consoWh, 0);
+  // Bilans 7 jours (selon le filtre)
+  const sum = (k: keyof HistoryPoint) => points.reduce((acc, p) => acc + ((p[k] as number) ?? 0), 0);
+  const totals: Array<{ label: string; wh: number; cls: string }> =
+    net === "2"
+      ? [{ label: "Consommé réseau 2", wh: sum("conso2Wh"), cls: "text-cyan-300" }]
+      : net === "1"
+        ? [
+            { label: "Produit", wh: sum("prodWh"), cls: "text-amber-300" },
+            { label: "Consommé réseau 1", wh: sum("conso1Wh"), cls: "text-emerald-300" },
+            { label: "Acheté réseau 1", wh: sum("import1Wh"), cls: "text-rose-300" },
+          ]
+        : [
+            { label: "Produit", wh: sum("prodWh"), cls: "text-amber-300" },
+            { label: "Réseau 1", wh: sum("conso1Wh"), cls: "text-emerald-300" },
+            { label: "Réseau 2", wh: sum("conso2Wh"), cls: "text-cyan-300" },
+          ];
 
   // ── Conso par équipement (7 jours) ─────────────────────────────────
   // Sources combinées :
@@ -87,15 +156,17 @@ export default async function HistoryPage() {
   //      piscine/jacuzzi…).
   //  (b) LoadProfile sans device lié (PAC) : énergie estimée depuis les
   //      LoadEvent (durée × puissance moyenne du cycle).
-  const measuredDevices = await prisma.device.findMany({
-    where: {
-      enabled: true,
-      role: {
-        in: ["APPLIANCE", "BATTERY_AC_SWITCH", "AUX_NETWORK_METER"] as never,
+  const measuredDevices = (
+    await prisma.device.findMany({
+      where: {
+        enabled: true,
+        role: {
+          in: ["APPLIANCE", "BATTERY_AC_SWITCH", "AUX_NETWORK_METER"] as never,
+        },
       },
-    },
-    orderBy: { name: "asc" },
-  });
+      orderBy: { name: "asc" },
+    })
+  ).filter((d) => inNet(networkOf(d)));
   const measuredHourly = measuredDevices.length
     ? await prisma.readingHourly.findMany({
         where: {
@@ -106,10 +177,12 @@ export default async function HistoryPage() {
         select: { deviceId: true, hourTs: true, consoWh: true },
       })
     : [];
-  const heuristicProfiles = await prisma.loadProfile.findMany({
-    where: { enabled: true, measuredDeviceId: null },
-    orderBy: { createdAt: "asc" },
-  });
+  const heuristicProfiles = (
+    await prisma.loadProfile.findMany({
+      where: { enabled: true, measuredDeviceId: null },
+      orderBy: { createdAt: "asc" },
+    })
+  ).filter((p) => inNet(isNetwork2(`${p.id} ${p.name}`) ? 2 : 1));
   const heuristicEvents = heuristicProfiles.length
     ? await prisma.loadEvent.findMany({
         where: {
@@ -273,7 +346,8 @@ export default async function HistoryPage() {
     }));
 
   // Lignes du tableau : 200 dernières
-  const lastRows = [...rows]
+  const lastRows = rows
+    .filter((r) => inNet(networkOf(r.device)))
     .sort((a, b) => b.hourTs.getTime() - a.hourTs.getTime())
     .slice(0, 200);
 
@@ -286,21 +360,26 @@ export default async function HistoryPage() {
             Agrégats horaires sur les 7 derniers jours.
           </p>
         </div>
-        <div className="flex gap-3 text-xs text-zinc-400">
-          <span>
-            Produit{" "}
-            <span className="text-emerald-300 font-semibold tabular-nums">
-              {(totalProd / 1000).toFixed(1)} kWh
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-400">
+          {totals.map((t) => (
+            <span key={t.label}>
+              {t.label}{" "}
+              <span className={`${t.cls} font-semibold tabular-nums`}>
+                {(t.wh / 1000).toFixed(1)} kWh
+              </span>
             </span>
-          </span>
-          <span>
-            Consommé{" "}
-            <span className="text-sky-300 font-semibold tabular-nums">
-              {(totalConso / 1000).toFixed(1)} kWh
-            </span>
-          </span>
+          ))}
         </div>
       </div>
+
+      <Seg
+        options={[
+          { key: "all", label: "Tous réseaux", href: "/history" },
+          { key: "1", label: "Réseau 1 · maison", href: "/history?n=1" },
+          { key: "2", label: "Réseau 2 · piscine, jacuzzi, PAC, voiture", href: "/history?n=2" },
+        ]}
+        active={net}
+      />
 
       {points.length === 0 ? (
         <div className="card text-sm text-zinc-500">
@@ -308,7 +387,7 @@ export default async function HistoryPage() {
           calculés par le worker.
         </div>
       ) : (
-        <HistoryChart data={points} />
+        <HistoryChart data={points} net={net} />
       )}
 
       {usedDeviceNames.length > 0 && (
@@ -372,6 +451,33 @@ export default async function HistoryPage() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Seg({
+  options,
+  active,
+}: {
+  options: Array<{ key: string; label: string; href: string }>;
+  active: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map((o) => (
+        <Link
+          key={o.key}
+          href={o.href}
+          className={
+            "btn text-xs " +
+            (o.key === active
+              ? "bg-emerald-900/50 text-emerald-100 border border-emerald-700"
+              : "btn-ghost")
+          }
+        >
+          {o.label}
+        </Link>
+      ))}
     </div>
   );
 }
