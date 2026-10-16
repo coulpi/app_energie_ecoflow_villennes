@@ -508,6 +508,48 @@ lvgl:
             bg_opa: TRANSP
             text: "--:--"
 
+        # ── BANDEAU CONSO / RESEAU (toujours visible) ─────────
+        - obj:
+            id: conso2_pill
+            x: 10
+            y: 6
+            width: 150
+            height: 30
+            radius: 15
+            pad_all: 0
+            border_width: 1
+            border_color: 0x30363D
+            bg_color: 0x161B22
+            scrollable: false
+            widgets:
+              - label:
+                  id: conso2_label
+                  align: CENTER
+                  text_font: montserrat_14
+                  text_color: 0xC9D1D9
+                  bg_opa: TRANSP
+                  text: "conso --"
+        - obj:
+            id: grid2_pill
+            x: 300
+            y: 6
+            width: 170
+            height: 30
+            radius: 15
+            pad_all: 0
+            border_width: 1
+            border_color: 0x30363D
+            bg_color: 0x161B22
+            scrollable: false
+            widgets:
+              - label:
+                  id: grid2_label
+                  align: CENTER
+                  text_font: montserrat_16
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "RESEAU --"
+
         # ── CARTE JACUZZI ────────────────────────────────────
         - obj:
             x: 10
@@ -672,6 +714,48 @@ lvgl:
             text_color: 0x8B949E
             bg_opa: TRANSP
             text: "--:--"
+        # ── BANDEAU CONSO / RESEAU (toujours visible) ─────────
+        - obj:
+            id: conso3_pill
+            x: 10
+            y: 6
+            width: 150
+            height: 30
+            radius: 15
+            pad_all: 0
+            border_width: 1
+            border_color: 0x30363D
+            bg_color: 0x161B22
+            scrollable: false
+            widgets:
+              - label:
+                  id: conso3_label
+                  align: CENTER
+                  text_font: montserrat_14
+                  text_color: 0xC9D1D9
+                  bg_opa: TRANSP
+                  text: "conso --"
+        - obj:
+            id: grid3_pill
+            x: 300
+            y: 6
+            width: 170
+            height: 30
+            radius: 15
+            pad_all: 0
+            border_width: 1
+            border_color: 0x30363D
+            bg_color: 0x161B22
+            scrollable: false
+            widgets:
+              - label:
+                  id: grid3_label
+                  align: CENTER
+                  text_font: montserrat_16
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "RESEAU --"
+
         - label:
             id: sp_z0
             x: 16
@@ -1517,3 +1601,30 @@ interval:
           }
           lv_obj_set_width(id(bat_fill), w);
           lv_obj_set_style_bg_color(id(bat_fill), lv_color_hex(color), LV_PART_MAIN);
+
+  # ── Bandeau conso / réseau des pages 2 et 3 ──────────
+  - interval: 2s
+    then:
+      - lambda: |-
+          bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+          int g = id(g_grid);
+          char conso[24], grid[24];
+          uint32_t bg = 0x161B22, border = 0x30363D;
+          if (stale) {
+            snprintf(conso, sizeof(conso), "conso --");
+            snprintf(grid, sizeof(grid), "RESEAU --");
+          } else {
+            snprintf(conso, sizeof(conso), "conso %d W", id(g_conso));
+            if (g > 30) { snprintf(grid, sizeof(grid), "ACHAT %d W", g); bg = 0x5C1A1A; border = 0xF78166; }
+            else if (g < -30) { snprintf(grid, sizeof(grid), "INJECT. %d W", -g); bg = 0x1A3D2B; border = 0x3FB950; }
+            else snprintf(grid, sizeof(grid), "RESEAU %d W", g);
+          }
+          lv_obj_t *pills[2] = {id(grid2_pill), id(grid3_pill)};
+          lv_obj_t *glabels[2] = {id(grid2_label), id(grid3_label)};
+          lv_obj_t *clabels[2] = {id(conso2_label), id(conso3_label)};
+          for (int i = 0; i < 2; i++) {
+            lv_obj_set_style_bg_color(pills[i], lv_color_hex(bg), LV_PART_MAIN);
+            lv_obj_set_style_border_color(pills[i], lv_color_hex(border), LV_PART_MAIN);
+            lv_label_set_text(glabels[i], grid);
+            lv_label_set_text(clabels[i], conso);
+          }

@@ -160,6 +160,34 @@ function Card({
   return <rect x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={r} fill={bg} stroke={border} strokeWidth={sw} />;
 }
 
+// Bandeau des pages 2 et 3 : conso à gauche, achat/injection réseau à droite
+// (rouge = achat, vert = injection), mêmes règles que la carte de la page 1.
+function GridBand({ d }: { d: Live | null }) {
+  const g = d?.grid ?? 0;
+  const buying = !!d && g > 30;
+  const selling = !!d && g < -30;
+  return (
+    <g>
+      <rect x={10.5} y={6.5} width={149} height={29} rx={14.5} fill={C.card} stroke={C.border} />
+      <T x={85} y={14} size={14} color="#C9D1D9" anchor="middle">
+        {d ? `conso ${d.conso} W` : "conso --"}
+      </T>
+      <rect
+        x={300.5}
+        y={6.5}
+        width={169}
+        height={29}
+        rx={14.5}
+        fill={buying ? "#5C1A1A" : selling ? "#1A3D2B" : C.card}
+        stroke={buying ? "#F78166" : selling ? C.green : C.border}
+      />
+      <T x={385} y={13} size={16} color={C.white} anchor="middle" weight={600}>
+        {!d ? "RESEAU --" : buying ? `ACHAT ${g} W` : selling ? `INJECT. ${-g} W` : `RESEAU ${g} W`}
+      </T>
+    </g>
+  );
+}
+
 const hhmm = (d: Date) =>
   d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 
@@ -286,6 +314,7 @@ function Page2({ d, chart, now }: { d: Live | null; chart: Chart | null; now: Da
       <T x={240} y={10} size={22} color={C.muted} anchor="middle">
         {hhmm(now)}
       </T>
+      <GridBand d={d} />
       <Card x={10} y={46} w={460} h={154} />
       <T x={28} y={60} size={14} color={C.cyan} weight={600}>
         JACUZZI
@@ -337,7 +366,7 @@ function Page2({ d, chart, now }: { d: Live | null; chart: Chart | null; now: Da
   );
 }
 
-function Page3({ s, now }: { s: Solar | null; now: Date }) {
+function Page3({ s, d, now }: { s: Solar | null; d: Live | null; now: Date }) {
   const TW = 68;
   const tileX = (i: number) => 16 + Math.floor(i / 2) * (2 * TW + 4 + 14) + (i % 2) * (TW + 4);
   const style = (st: number) =>
@@ -353,6 +382,7 @@ function Page3({ s, now }: { s: Solar | null; now: Date }) {
       <T x={240} y={10} size={22} color={C.muted} anchor="middle">
         {hhmm(now)}
       </T>
+      <GridBand d={d} />
       {ZONES.map((z, zi) => (
         <g key={z.title}>
           <T x={16} y={z.y} size={16} color={C.white} weight={600}>
@@ -437,7 +467,7 @@ export default function ScreenMirror() {
           >
             {page === 0 && <Page1 d={live} now={now} />}
             {page === 1 && <Page2 d={live} chart={chart} now={now} />}
-            {page === 2 && <Page3 s={solar} now={now} />}
+            {page === 2 && <Page3 s={solar} d={live} now={now} />}
           </svg>
         </div>
         <div className="flex items-center justify-between gap-3 max-w-[520px] px-1">
