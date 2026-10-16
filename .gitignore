@@ -28,3 +28,8 @@ read-APSystems-YC600-QS1-DS3/
 
 # Copie ESPHome avec secrets en clair
 esphome/*.local.yaml
+
+# ESPHome : secrets, polices téléchargées et build (serveur)
+esphome/secrets.yaml
+esphome/fonts/
+esphome/.esphome/
