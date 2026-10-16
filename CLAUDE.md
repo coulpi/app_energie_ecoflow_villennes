@@ -53,7 +53,10 @@ un conflit local sur 5432).
   bilan du jour, alertes, état des équipements).
 - **Piège Prisma** : `include: { readings: { take: 1 } }` charge toutes les
   mesures de chaque appareil avant de tronquer → utiliser
-  `latestReadings()` (`DISTINCT ON`) de `lib/dashboard.ts`.
+  `latestReadings()` de `lib/dashboard.ts` (LATERAL LIMIT 1 sur l'index
+  `(deviceId, ts DESC)` ; un `DISTINCT ON` sur Reading = seq scan ≈ 2,5 s).
+- Page `/solar` : schéma d'implantation en tête (`app/solar/SolarLayout.tsx`,
+  constante `ARRAYS` = ordre physique des onduleurs, gauche → droite).
 
 ## Pilotage EcoFlow — IMPORTANT
 

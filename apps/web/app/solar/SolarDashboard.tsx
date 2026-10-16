@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import SolarLayout from "./SolarLayout";
 import {
   Area,
   AreaChart,
@@ -199,7 +200,7 @@ function InverterPanel({
     inv.panels.length > 0
       ? Math.max(...inv.panels.map((p) => new Date(p.ts).getTime()))
       : null;
-  const stale = lastTs !== null && Date.now() - lastTs > 10 * 60_000;
+  const stale = lastTs !== null && Date.now() - lastTs > 20 * 60_000; // ECU : 1 relevé / 5 min
   const noData = inv.panels.length === 0;
 
   const chartData = useMemo(() => {
@@ -224,7 +225,7 @@ function InverterPanel({
   }, [chartData]);
 
   return (
-    <section className="card space-y-4">
+    <section id={`inv-${inv.sn}`} className="card space-y-4 scroll-mt-4">
       <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
@@ -389,7 +390,7 @@ export default function SolarDashboard({ inverters, series, alerts }: Props) {
           <h1 className="page-h1">Production solaire</h1>
           <p className="page-sub mt-1">
             Surveillance par panneau et par micro-onduleur (APSystems DS3 via
-            passerelle Zigbee).
+            l&rsquo;ECU).
           </p>
         </div>
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
@@ -411,6 +412,8 @@ export default function SolarDashboard({ inverters, series, alerts }: Props) {
           </span>
         </div>
       </div>
+
+      {inverters.length > 0 && <SolarLayout inverters={inverters} />}
 
       {alerts.length > 0 && (
         <section className="space-y-2">
