@@ -164,18 +164,36 @@ interface LatestReading {
 }
 
 /**
- * Dernière mesure de chaque appareil (7 derniers jours), en une requête
- * DISTINCT ON. NB : un `include: { readings: { take: 1 } }` Prisma charge
- * toutes les mesures de chaque appareil avant de tronquer en mémoire
- * (~30 j × 9 appareils) → lent, voire mémoire saturée.
+ * Dernière mesure de chaque appareil (7 derniers jours) : un LATERAL
+ * LIMIT 1 par appareil sur l'index (deviceId, ts DESC) → < 1 ms.
+ * NB : un DISTINCT ON sur Reading parcourt toute la table et trie ~1 M de
+ * lignes (≈ 2,5 s) ; un `include: { readings: { take: 1 } }` Prisma charge
+ * toutes les mesures avant de tronquer en mémoire.
  */
-async function latestReadings(): Promise<Map<string, LatestReading>> {
+async function fetchLatestReadings(): Promise<Map<string, LatestReading>> {
   const rows = await prisma.$queryRaw<Array<LatestReading & { deviceId: string }>>`
-    SELECT DISTINCT ON ("deviceId") "deviceId", ts, "powerW", soc, "switchOn"
-      FROM "Reading"
-     WHERE ts > now() - interval '7 days'
-     ORDER BY "deviceId", ts DESC`;
+    SELECT d.id AS "deviceId", r.ts, r."powerW", r.soc, r."switchOn"
+      FROM "Device" d
+     CROSS JOIN LATERAL (
+       SELECT ts, "powerW", soc, "switchOn"
+         FROM "Reading"
+        WHERE "deviceId" = d.id AND ts > now() - interval '7 days'
+        ORDER BY ts DESC
+        LIMIT 1
+     ) r`;
   return new Map(rows.map((r) => [r.deviceId, r]));
+}
+
+// getAlerts et getEquipmentStates tournent en parallèle sur le tableau de
+// bord : on partage la même requête pendant 2 s.
+let latestCache: { at: number; p: Promise<Map<string, LatestReading>> } | null = null;
+function latestReadings(): Promise<Map<string, LatestReading>> {
+  if (!latestCache || Date.now() - latestCache.at > 2_000) {
+    const p = fetchLatestReadings();
+    latestCache = { at: Date.now(), p };
+    p.catch(() => (latestCache = null));
+  }
+  return latestCache.p;
 }
 
 export async function getAlerts(now = new Date()): Promise<DashAlert[]> {
