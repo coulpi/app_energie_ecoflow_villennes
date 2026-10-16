@@ -1,0 +1,660 @@
+# Écran ESPHome tabscreen1 (ESP32-S3 + ST7701S 480×480 + GT911, LVGL).
+# Affiche les données de l'appli EcoFlow Villennes, lues directement sur
+# http://192.168.0.26:3010/api/screen toutes les 5 s (sans Home Assistant).
+#
+# Installation : ESPHome Builder → tabscreen1 → EDIT → coller ce fichier →
+# INSTALL → Wirelessly. Secrets attendus (bouton SECRETS) : wifi_ssid,
+# wifi_password, tabscreen1_api_key, tabscreen1_ota_password,
+# tabscreen1_ap_password.
+#
+# NB : les polices LVGL intégrées (montserrat_*) n'ont pas les accents :
+# textes sans accents, sauf « ° » qui est inclus.
+
+substitutions:
+  screen_api_url: "http://192.168.0.26:3010/api/screen"
+
+esphome:
+  name: tabscreen1
+  friendly_name: TABSCREEN1
+
+esp32:
+  variant: esp32s3
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+
+api:
+  encryption:
+    key: !secret tabscreen1_api_key
+  # Sans Home Assistant connecté en permanence, ne pas redémarrer toutes
+  # les 15 min faute de client API (comportement par défaut d'ESPHome).
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    password: !secret tabscreen1_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Tabscreen1 Fallback Hotspot"
+    password: !secret tabscreen1_ap_password
+
+captive_portal:
+
+http_request:
+  timeout: 4s
+  verify_ssl: false
+
+# ── HEURE (serveurs NTP, plus Home Assistant) ──────────
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Paris
+    on_time:
+      # Veille de nuit : rétroéclairage réduit de 23 h à 7 h.
+      - seconds: 0
+        minutes: 0
+        hours: 23
+        then:
+          - light.turn_on:
+              id: display_backlight
+              brightness: 15%
+      - seconds: 0
+        minutes: 0
+        hours: 7
+        then:
+          - light.turn_on:
+              id: display_backlight
+              brightness: 100%
+
+# ── DONNÉES REÇUES DE L'APPLI ──────────────────────────
+globals:
+  - { id: g_prod, type: int, initial_value: "0" }
+  - { id: g_conso, type: int, initial_value: "0" }
+  - { id: g_grid, type: int, initial_value: "0" }
+  - { id: g_aux, type: int, initial_value: "0" }
+  - { id: g_soc, type: int, initial_value: "-1" }
+  - { id: g_bat, type: int, initial_value: "0" }
+  - { id: g_temp, type: float, initial_value: "-99" }
+  - { id: g_tempo, type: std::string, initial_value: '""' }
+  - { id: g_tempo_dem, type: std::string, initial_value: '""' }
+  - { id: g_meteo, type: std::string, initial_value: '""' }
+  - { id: g_last_ok, type: uint32_t, initial_value: "0" }
+
+# ── FONTS ──────────────────────────────────────────────
+font:
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: mdi_font_48
+    size: 48
+    glyphs:
+      - "\U000F0599"  # weather-sunny
+      - "\U000F0594"  # weather-night
+      - "\U000F0595"  # weather-partly-cloudy
+      - "\U000F0590"  # weather-cloudy
+      - "\U000F0597"  # weather-rainy
+      - "\U000F0596"  # weather-pouring
+      - "\U000F059D"  # weather-snowy
+      - "\U000F0591"  # weather-fog
+      - "\U000F0593"  # weather-lightning
+      - "\U000F067E"  # weather-lightning-rainy
+      - "\U000F059F"  # weather-windy
+      - "\U000F0592"  # weather-hail
+      - "\U000F0898"  # help-circle (fallback)
+
+output:
+  - platform: ledc
+    id: backlight_output
+    pin: GPIO38
+    frequency: 150Hz
+    min_power: 0.01
+    zero_means_zero: true
+
+light:
+  - platform: monochromatic
+    id: display_backlight
+    name: "Retroeclairage"
+    output: backlight_output
+    restore_mode: ALWAYS_ON
+    default_transition_length: 0s
+
+script:
+  # Toucher la nuit : pleine luminosité 30 s puis retour en veille.
+  - id: wake_screen
+    mode: restart
+    then:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+      - delay: 30s
+      - if:
+          condition:
+            lambda: |-
+              auto now = id(sntp_time).now();
+              return now.is_valid() && (now.hour >= 23 || now.hour < 7);
+          then:
+            - light.turn_on:
+                id: display_backlight
+                brightness: 15%
+
+spi:
+  - id: lcd_spi
+    clk_pin: GPIO48
+    mosi_pin: GPIO47
+
+i2c:
+  sda: GPIO19
+  scl: GPIO45
+  scan: true
+
+display:
+  - platform: st7701s
+    id: tft_display
+    dimensions:
+      width: 480
+      height: 480
+    spi_mode: MODE3
+    data_rate: 2MHz
+    color_order: RGB
+    invert_colors: false
+    cs_pin: 39
+    de_pin: 18
+    hsync_pin: 16
+    vsync_pin: 17
+    pclk_pin: 21
+    pclk_frequency: 12MHz
+    pclk_inverted: false
+    hsync_pulse_width: 8
+    hsync_front_porch: 10
+    hsync_back_porch: 20
+    vsync_pulse_width: 8
+    vsync_front_porch: 10
+    vsync_back_porch: 10
+    update_interval: never
+    auto_clear_enabled: false
+    init_sequence:
+      - 1
+      - [0xFF, 0x77, 0x01, 0x00, 0x00, 0x10]
+      - [0xCD, 0x00]
+    data_pins:
+      red: [11, 12, 13, 14, 0]
+      green: [8, 20, 3, 46, 9, 10]
+      blue: [4, 5, 6, 7, 15]
+
+touchscreen:
+  - platform: gt911
+    id: tft_touch
+    display: tft_display
+    update_interval: 50ms
+    address: 0x5D
+    on_touch:
+      - script.execute: wake_screen
+
+# ── INTERFACE ──────────────────────────────────────────
+lvgl:
+  bg_color: 0x0D1117
+
+  widgets:
+
+    # ── HORLOGE ──────────────────────────────────────────
+    - label:
+        id: clock_label
+        align: TOP_MID
+        y: 45
+        text_font: montserrat_48
+        text_color: 0xFFFFFF
+        bg_opa: TRANSP
+        text: "--:--"
+
+    # ── DATE ─────────────────────────────────────────────
+    - label:
+        id: date_label
+        align: TOP_MID
+        y: 115
+        text_font: montserrat_16
+        text_color: 0x8B949E
+        bg_opa: TRANSP
+        text: "--- -- ----"
+
+    # ── SEPARATEUR ───────────────────────────────────────
+    - obj:
+        x: 20
+        y: 148
+        width: 440
+        height: 2
+        bg_color: 0x21262D
+        border_width: 0
+        radius: 0
+
+    # ── CARTE METEO + TEMPO (gauche) ─────────────────────
+    - obj:
+        x: 10
+        y: 162
+        width: 220
+        height: 308
+        bg_color: 0x161B22
+        border_width: 1
+        border_color: 0x30363D
+        radius: 16
+        scrollable: false
+        widgets:
+          - label:
+              align: TOP_MID
+              y: 4
+              text_font: montserrat_14
+              text_color: 0x58A6FF
+              bg_opa: TRANSP
+              text: "METEO"
+          - label:
+              id: weather_icon
+              align: TOP_MID
+              y: 28
+              text_font: mdi_font_48
+              text_color: 0x58A6FF
+              bg_opa: TRANSP
+              text: "\U000F0898"
+          - label:
+              id: weather_label
+              align: TOP_MID
+              y: 88
+              text_font: montserrat_16
+              text_color: 0xA0B4CC
+              bg_opa: TRANSP
+              text: "chargement"
+          - label:
+              id: temp_label
+              align: TOP_MID
+              y: 114
+              text_font: montserrat_22
+              text_color: 0xFFFFFF
+              bg_opa: TRANSP
+              text: "--°C"
+          - obj:
+              align: TOP_MID
+              y: 152
+              width: 170
+              height: 1
+              bg_color: 0x30363D
+              border_width: 0
+              radius: 0
+          - label:
+              align: TOP_MID
+              y: 164
+              text_font: montserrat_14
+              text_color: 0x8B949E
+              bg_opa: TRANSP
+              text: "TEMPO"
+          - obj:
+              id: tempo_today_pill
+              align: TOP_MID
+              y: 188
+              width: 180
+              height: 38
+              radius: 19
+              border_width: 0
+              bg_color: 0x30363D
+              scrollable: false
+              widgets:
+                - label:
+                    id: tempo_today_label
+                    align: CENTER
+                    text_font: montserrat_16
+                    text_color: 0xFFFFFF
+                    bg_opa: TRANSP
+                    text: "Auj. --"
+          - obj:
+              id: tempo_dem_pill
+              align: TOP_MID
+              y: 236
+              width: 180
+              height: 30
+              radius: 15
+              border_width: 0
+              bg_color: 0x30363D
+              scrollable: false
+              widgets:
+                - label:
+                    id: tempo_dem_label
+                    align: CENTER
+                    text_font: montserrat_14
+                    text_color: 0xFFFFFF
+                    bg_opa: TRANSP
+                    text: "Demain --"
+
+    # ── CARTE PRODUCTION ─────────────────────────────────
+    - obj:
+        x: 245
+        y: 162
+        width: 225
+        height: 96
+        bg_color: 0x161B22
+        border_width: 1
+        border_color: 0x30363D
+        radius: 16
+        scrollable: false
+        widgets:
+          - label:
+              align: TOP_MID
+              y: -6
+              text_font: montserrat_14
+              text_color: 0x3FB950
+              bg_opa: TRANSP
+              text: "PRODUCTION"
+          - label:
+              id: production_label
+              align: CENTER
+              y: 2
+              text_font: montserrat_32
+              text_color: 0x3FB950
+              bg_opa: TRANSP
+              text: "--"
+          - label:
+              align: BOTTOM_MID
+              y: 6
+              text_font: montserrat_12
+              text_color: 0x8B949E
+              bg_opa: TRANSP
+              text: "Watts"
+
+    # ── CARTE CONSOMMATION (fond rouge = achat, vert = injection)
+    - obj:
+        id: consumption_card
+        x: 245
+        y: 266
+        width: 225
+        height: 96
+        bg_color: 0x161B22
+        border_width: 1
+        border_color: 0x30363D
+        radius: 16
+        scrollable: false
+        widgets:
+          - label:
+              align: TOP_MID
+              y: -6
+              text_font: montserrat_14
+              text_color: 0xFFFFFF
+              bg_opa: TRANSP
+              text: "CONSOMMATION"
+          - label:
+              id: consumption_label
+              align: CENTER
+              y: 2
+              text_font: montserrat_32
+              text_color: 0xFFFFFF
+              bg_opa: TRANSP
+              text: "--"
+          - label:
+              id: grid_label
+              align: BOTTOM_MID
+              y: 6
+              text_font: montserrat_12
+              text_color: 0xC9D1D9
+              bg_opa: TRANSP
+              text: "Watts"
+
+    # ── CARTE BATTERIE ───────────────────────────────────
+    - obj:
+        x: 245
+        y: 370
+        width: 225
+        height: 100
+        bg_color: 0x161B22
+        border_width: 1
+        border_color: 0x30363D
+        radius: 16
+        scrollable: false
+        widgets:
+          - label:
+              align: TOP_MID
+              y: -6
+              text_font: montserrat_14
+              text_color: 0xA371F7
+              bg_opa: TRANSP
+              text: "BATTERIE"
+          - label:
+              id: battery_label
+              align: CENTER
+              y: 2
+              text_font: montserrat_32
+              text_color: 0xA371F7
+              bg_opa: TRANSP
+              text: "--"
+          - label:
+              id: battery_state_label
+              align: BOTTOM_MID
+              y: 6
+              text_font: montserrat_12
+              text_color: 0x8B949E
+              bg_opa: TRANSP
+              text: "--"
+
+interval:
+  # ── Lecture de l'appli ───────────────────────────────
+  - interval: 5s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: ${screen_api_url}
+                capture_response: true
+                max_response_buffer_size: 512
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGW("screen", "HTTP %d", response->status_code);
+                          return;
+                        }
+                        bool ok = json::parse_json(body, [](JsonObject root) -> bool {
+                          id(g_prod) = root["prod"] | 0;
+                          id(g_conso) = root["conso"] | 0;
+                          id(g_grid) = root["grid"] | 0;
+                          id(g_aux) = root["aux"] | 0;
+                          id(g_soc) = root["soc"] | -1;
+                          id(g_bat) = root["bat"] | 0;
+                          id(g_temp) = root["temp"] | -99.0f;
+                          id(g_tempo) = std::string(root["tempo"] | "");
+                          id(g_tempo_dem) = std::string(root["tempo_dem"] | "");
+                          id(g_meteo) = std::string(root["meteo"] | "");
+                          return true;
+                        });
+                        if (ok) id(g_last_ok) = millis();
+                on_error:
+                  then:
+                    - logger.log:
+                        level: WARN
+                        format: "Appli injoignable"
+
+  # ── Horloge + Date ───────────────────────────────────
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: return id(sntp_time).now().is_valid();
+          then:
+            - lvgl.label.update:
+                id: clock_label
+                text: !lambda |-
+                  static char buf[6];
+                  auto now = id(sntp_time).now();
+                  snprintf(buf, sizeof(buf), "%02d:%02d", now.hour, now.minute);
+                  return std::string(buf);
+            - lvgl.label.update:
+                id: date_label
+                text: !lambda |-
+                  static char buf[32];
+                  auto now = id(sntp_time).now();
+                  const char* days[]   = {"", "dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."};
+                  const char* months[] = {"", "jan.", "fev.", "mar.", "avr.", "mai", "jun.",
+                                          "jul.", "aou.", "sep.", "oct.", "nov.", "dec."};
+                  snprintf(buf, sizeof(buf), "%s %d %s %d",
+                    days[now.day_of_week],
+                    now.day_of_month,
+                    months[now.month],
+                    now.year);
+                  return std::string(buf);
+
+  # ── Mise à jour de l'affichage (2 s) ─────────────────
+  # Au-delà de 30 s sans réponse de l'appli : valeurs remplacées par « -- ».
+  - interval: 2s
+    then:
+      - lvgl.label.update:
+          id: production_label
+          text: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return std::string("--");
+            return std::to_string(id(g_prod));
+
+      - lvgl.label.update:
+          id: consumption_label
+          text: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return std::string("--");
+            return std::to_string(id(g_conso));
+
+      - lvgl.label.update:
+          id: grid_label
+          text: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return std::string("appli injoignable");
+            char buf[32];
+            int g = id(g_grid);
+            if (g > 30) snprintf(buf, sizeof(buf), "achat reseau %d W", g);
+            else if (g < -30) snprintf(buf, sizeof(buf), "injection %d W", -g);
+            else snprintf(buf, sizeof(buf), "Watts");
+            return std::string(buf);
+
+      - lvgl.widget.update:
+          id: consumption_card
+          bg_color: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return lv_color_hex(0x161B22);
+            if (id(g_grid) > 30) return lv_color_hex(0x5C1A1A);
+            if (id(g_grid) < -30) return lv_color_hex(0x1A3D2B);
+            return lv_color_hex(0x161B22);
+          border_color: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return lv_color_hex(0x30363D);
+            if (id(g_grid) > 30) return lv_color_hex(0xF78166);
+            if (id(g_grid) < -30) return lv_color_hex(0x3FB950);
+            return lv_color_hex(0x30363D);
+
+      - lvgl.label.update:
+          id: battery_label
+          text: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale || id(g_soc) < 0) return std::string("--");
+            return std::to_string(id(g_soc)) + " %";
+          text_color: !lambda |-
+            int s = id(g_soc);
+            if (s < 0) return lv_color_hex(0xA371F7);
+            if (s < 20) return lv_color_hex(0xF85149);
+            if (s < 50) return lv_color_hex(0xD29922);
+            return lv_color_hex(0x3FB950);
+
+      - lvgl.label.update:
+          id: battery_state_label
+          text: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return std::string("--");
+            char buf[32];
+            int b = id(g_bat);
+            if (b > 30) snprintf(buf, sizeof(buf), "decharge %d W", b);
+            else if (b < -30) snprintf(buf, sizeof(buf), "charge %d W", -b);
+            else snprintf(buf, sizeof(buf), "veille");
+            return std::string(buf);
+
+      # Tempo du jour / lendemain
+      - lvgl.label.update:
+          id: tempo_today_label
+          text: !lambda |-
+            const std::string& t = id(g_tempo);
+            if (t == "BLUE")  return std::string("Auj. BLEU");
+            if (t == "WHITE") return std::string("Auj. BLANC");
+            if (t == "RED")   return std::string("Auj. ROUGE");
+            return std::string("Auj. --");
+          text_color: !lambda |-
+            return id(g_tempo) == "WHITE" ? lv_color_hex(0x0D1117) : lv_color_hex(0xFFFFFF);
+      - lvgl.widget.update:
+          id: tempo_today_pill
+          bg_color: !lambda |-
+            const std::string& t = id(g_tempo);
+            if (t == "BLUE")  return lv_color_hex(0x1F6FEB);
+            if (t == "WHITE") return lv_color_hex(0xE6EDF3);
+            if (t == "RED")   return lv_color_hex(0xDA3633);
+            return lv_color_hex(0x30363D);
+      - lvgl.label.update:
+          id: tempo_dem_label
+          text: !lambda |-
+            const std::string& t = id(g_tempo_dem);
+            if (t == "BLUE")  return std::string("Demain BLEU");
+            if (t == "WHITE") return std::string("Demain BLANC");
+            if (t == "RED")   return std::string("Demain ROUGE");
+            return std::string("Demain --");
+          text_color: !lambda |-
+            return id(g_tempo_dem) == "WHITE" ? lv_color_hex(0x0D1117) : lv_color_hex(0xFFFFFF);
+      - lvgl.widget.update:
+          id: tempo_dem_pill
+          bg_color: !lambda |-
+            const std::string& t = id(g_tempo_dem);
+            if (t == "BLUE")  return lv_color_hex(0x1F6FEB);
+            if (t == "WHITE") return lv_color_hex(0xE6EDF3);
+            if (t == "RED")   return lv_color_hex(0xDA3633);
+            return lv_color_hex(0x30363D);
+
+      # Température
+      - lvgl.label.update:
+          id: temp_label
+          text: !lambda |-
+            if (id(g_temp) <= -98) return std::string("--°C");
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f°C", id(g_temp));
+            return std::string(buf);
+
+      # Icone météo MDI
+      - lvgl.label.update:
+          id: weather_icon
+          text: !lambda |-
+            const std::string& s = id(g_meteo);
+            if (s == "sunny")            return std::string("\U000F0599");
+            if (s == "clear-night")      return std::string("\U000F0594");
+            if (s == "partlycloudy")     return std::string("\U000F0595");
+            if (s == "cloudy")           return std::string("\U000F0590");
+            if (s == "rainy")            return std::string("\U000F0597");
+            if (s == "pouring")          return std::string("\U000F0596");
+            if (s == "snowy")            return std::string("\U000F059D");
+            if (s == "fog")              return std::string("\U000F0591");
+            if (s == "lightning")        return std::string("\U000F0593");
+            if (s == "lightning-rainy")  return std::string("\U000F067E");
+            if (s == "windy")            return std::string("\U000F059F");
+            if (s == "hail")             return std::string("\U000F0592");
+            return std::string("\U000F0898");
+
+      # Libelle météo
+      - lvgl.label.update:
+          id: weather_label
+          text: !lambda |-
+            const std::string& s = id(g_meteo);
+            if (s.empty())               return std::string("indisponible");
+            if (s == "sunny")            return std::string("Ensoleille");
+            if (s == "clear-night")      return std::string("Nuit claire");
+            if (s == "partlycloudy")     return std::string("Partiell. nuageux");
+            if (s == "cloudy")           return std::string("Nuageux");
+            if (s == "rainy")            return std::string("Pluvieux");
+            if (s == "pouring")          return std::string("Fortes pluies");
+            if (s == "snowy")            return std::string("Neigeux");
+            if (s == "fog")              return std::string("Brouillard");
+            if (s == "lightning")        return std::string("Orageux");
+            if (s == "lightning-rainy")  return std::string("Orage et pluie");
+            if (s == "windy")            return std::string("Venteux");
+            if (s == "hail")             return std::string("Grele");
+            return s;
