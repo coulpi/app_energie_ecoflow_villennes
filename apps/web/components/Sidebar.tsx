@@ -67,6 +67,16 @@ const items: NavItem[] = [
     ),
   },
   {
+    href: "/screen",
+    label: "Écran",
+    icon: I(
+      <>
+        <rect x="4" y="3" width="16" height="16" rx="2" />
+        <path d="M9 21h6M12 19v2M8 8h3M8 12h8M8 15h5" />
+      </>,
+    ),
+  },
+  {
     href: "/equipment",
     label: "Équipements",
     match: ["/jacuzzi", "/loads"],

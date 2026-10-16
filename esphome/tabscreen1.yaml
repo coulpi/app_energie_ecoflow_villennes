@@ -427,6 +427,7 @@ lvgl:
             y: 370
             width: 225
             height: 100
+            pad_all: 0
             bg_color: 0x161B22
             border_width: 1
             border_color: 0x30363D
@@ -435,15 +436,46 @@ lvgl:
             widgets:
               - label:
                   align: TOP_MID
-                  y: -6
+                  y: 8
                   text_font: montserrat_14
                   text_color: 0xA371F7
                   bg_opa: TRANSP
                   text: "BATTERIE"
+              # Icône batterie : corps 58 × 30, remplissage animé (52 px max).
+              - obj:
+                  id: bat_body
+                  x: 16
+                  y: 36
+                  width: 58
+                  height: 30
+                  pad_all: 0
+                  radius: 5
+                  bg_opa: TRANSP
+                  border_width: 2
+                  border_color: 0x8B949E
+                  scrollable: false
+                  widgets:
+                    - obj:
+                        id: bat_fill
+                        x: 1
+                        y: 1
+                        width: 0
+                        height: 24
+                        radius: 3
+                        border_width: 0
+                        bg_color: 0xA371F7
+              - obj:
+                  x: 74
+                  y: 45
+                  width: 4
+                  height: 12
+                  radius: 1
+                  border_width: 0
+                  bg_color: 0x8B949E
               - label:
                   id: battery_label
-                  align: CENTER
-                  y: 2
+                  x: 92
+                  y: 30
                   text_font: montserrat_32
                   text_color: 0xA371F7
                   bg_opa: TRANSP
@@ -451,7 +483,7 @@ lvgl:
               - label:
                   id: battery_state_label
                   align: BOTTOM_MID
-                  y: 6
+                  y: -8
                   text_font: montserrat_12
                   text_color: 0x8B949E
                   bg_opa: TRANSP
@@ -1450,3 +1482,38 @@ interval:
             char buf[8];
             snprintf(buf, sizeof(buf), "%02d:%02d", now.hour, now.minute);
             return std::string(buf);
+
+  # ── Animation batterie (page 1) ──────────────────────
+  # Charge : remplissage qui monte en boucle du niveau actuel jusqu'au plein
+  # (vert). Décharge : se vide en boucle du niveau actuel jusqu'à 0 (orange).
+  # Veille : niveau fixe.
+  - interval: 120ms
+    then:
+      - lambda: |-
+          static int phase = 0;
+          const int MAXW = 52;
+          int soc = id(g_soc);
+          bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+          int base = (soc < 0 || stale) ? 0 : (soc * MAXW) / 100;
+          int bat = stale ? 0 : id(g_bat);
+          int w = base;
+          uint32_t color;
+          if (bat < -30) {          // charge
+            int span = MAXW - base;
+            if (span < 8) span = 8;
+            phase = (phase + 3) % (span + 10);
+            w = base + (phase > span ? span : phase);
+            if (w > MAXW) w = MAXW;
+            color = 0x3FB950;
+          } else if (bat > 30) {    // décharge
+            int span = base < 8 ? 8 : base;
+            phase = (phase + 3) % (span + 10);
+            w = base - (phase > span ? span : phase);
+            if (w < 0) w = 0;
+            color = 0xF0883E;
+          } else {
+            phase = 0;
+            color = soc < 0 ? 0x8B949E : soc < 20 ? 0xF85149 : soc < 50 ? 0xD29922 : 0x3FB950;
+          }
+          lv_obj_set_width(id(bat_fill), w);
+          lv_obj_set_style_bg_color(id(bat_fill), lv_color_hex(color), LV_PART_MAIN);

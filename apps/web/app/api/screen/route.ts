@@ -4,6 +4,7 @@
 // parseur ArduinoJson côté ESP reste trivial.
 
 import { NextResponse } from "next/server";
+import { markScreenSeen } from "@/lib/screen-status";
 import { getDashboardSnapshot } from "@/lib/snapshot";
 
 export const dynamic = "force-dynamic";
@@ -87,7 +88,8 @@ async function jacuzzi(): Promise<JacuzziState | null> {
 // Booléen → 1 / 0, inconnu → -1.
 const tri = (b: boolean | null | undefined) => (b === true ? 1 : b === false ? 0 : -1);
 
-export async function GET() {
+export async function GET(req: Request) {
+  markScreenSeen(req.headers.get("user-agent"));
   const [s, w, j] = await Promise.all([getDashboardSnapshot(), currentWeather(), jacuzzi()]);
   const jOk = j?.reachable === true;
   const soc = int(s.batterySoc);
