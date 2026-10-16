@@ -1,6 +1,8 @@
 // Détection automatique des cycles d'appareils consommateurs récurrents.
 //
-// Algorithme : détection de **fronts** sur le compteur de conso maison.
+// Algorithme : détection de **fronts** sur le compteur du réseau de chaque
+// appareil (réseau 1 : conso maison ; réseau 2 : compteur dédié moins les
+// prises mesurées). Les appareils à prise mesurée ne sont pas devinés.
 //
 //   1. Smooth la puissance par moyenne glissante 1-min.
 //   2. À chaque pas, calcule delta = avg(t) - avg(t - LAG_MIN).
@@ -18,7 +20,7 @@
 // fenêtre d'analyse.
 
 import { prisma } from "../db.js";
-import { dayOfWeek } from "@app/shared";
+import { dayOfWeek, isNetwork2 } from "@app/shared";
 import { log } from "../log.js";
 
 interface PowerSample {
@@ -36,6 +38,98 @@ const ANALYSIS_HOURS = 48;
 const SMOOTH_MIN = 1; // moyenne glissante
 const LAG_MIN = 3; // delta entre maintenant et il y a 3 min
 
+type Row = { ts: Date; powerW: number | null };
+
+const readSeries = (deviceId: string, since: Date): Promise<Row[]> =>
+  prisma.reading.findMany({
+    where: { deviceId, ts: { gte: since }, powerW: { not: null } },
+    orderBy: { ts: "asc" },
+    select: { ts: true, powerW: true },
+  });
+
+// Moyenne par minute (clé = minute epoch).
+function perMinute(rows: Row[]): Map<number, number> {
+  const map = new Map<number, number[]>();
+  for (const r of rows) {
+    if (r.powerW === null) continue;
+    const k = Math.floor(r.ts.getTime() / 60_000);
+    const a = map.get(k) ?? [];
+    a.push(r.powerW);
+    map.set(k, a);
+  }
+  const out = new Map<number, number>();
+  for (const [k, vs] of map) out.set(k, vs.reduce((a, b) => a + b, 0) / vs.length);
+  return out;
+}
+
+/** Réseau 1 : compteur conso maison, sinon prod + grid signé. */
+async function network1Series(since: Date): Promise<PowerSample[] | null> {
+  const cons = await prisma.device.findFirst({
+    where: { enabled: true, role: "CONSUMPTION_METER" },
+  });
+  if (cons) {
+    const rows = await readSeries(cons.id, since);
+    if (rows.length < 30) return null;
+    return rows.map((r) => ({ ts: r.ts, w: Math.max(0, r.powerW ?? 0) }));
+  }
+  const [prodDev, gridDev] = await Promise.all([
+    prisma.device.findFirst({ where: { enabled: true, role: "PRODUCTION_METER" } }),
+    prisma.device.findFirst({ where: { enabled: true, role: "GRID_METER" } }),
+  ]);
+  if (!prodDev || !gridDev) return null;
+  const [pB, gB] = (await Promise.all([readSeries(prodDev.id, since), readSeries(gridDev.id, since)])).map(perMinute);
+  const raw: PowerSample[] = [];
+  for (const [k, p] of pB!) {
+    const g = gB!.get(k);
+    if (g === undefined) continue;
+    raw.push({ ts: new Date(k * 60_000), w: Math.max(0, p + g) });
+  }
+  raw.sort((a, b) => a.ts.getTime() - b.ts.getTime());
+  return raw.length < 30 ? null : raw;
+}
+
+/**
+ * Réseau 2 : compteur dédié MOINS les prises mesurées qui y sont branchées
+ * (jacuzzi, voiture, prise AC de charge batterie) → ne reste que ce qui n'a
+ * pas de mesure propre (pompe piscine, PAC…). Les prises sont échantillonnées
+ * au même rythme ; une minute sans mesure reprend la dernière valeur connue.
+ */
+async function network2Series(since: Date): Promise<PowerSample[] | null> {
+  const aux = await prisma.device.findMany({
+    where: { enabled: true, role: "AUX_NETWORK_METER" },
+  });
+  if (aux.length === 0) return null;
+  const plugs = (
+    await prisma.device.findMany({
+      where: { enabled: true, role: { in: ["APPLIANCE", "BATTERY_AC_SWITCH"] as never } },
+    })
+  ).filter((d) => d.role === "BATTERY_AC_SWITCH" || isNetwork2(d.name));
+
+  const auxMins = (await Promise.all(aux.map((d) => readSeries(d.id, since)))).map(perMinute);
+  const plugMins = (await Promise.all(plugs.map((d) => readSeries(d.id, since)))).map(perMinute);
+  const keys = [...new Set(auxMins.flatMap((m) => [...m.keys()]))].sort((a, b) => a - b);
+  const lastPlug = plugMins.map(() => 0);
+  const raw: PowerSample[] = [];
+  for (const k of keys) {
+    // Toutes les pinces du réseau 2 doivent avoir une valeur pour la minute.
+    let total = 0;
+    let complete = true;
+    for (const m of auxMins) {
+      const v = m.get(k);
+      if (v === undefined) { complete = false; break; }
+      total += v;
+    }
+    plugMins.forEach((m, i) => {
+      const v = m.get(k);
+      if (v !== undefined) lastPlug[i] = Math.max(0, v);
+    });
+    if (!complete) continue;
+    const measured = lastPlug.reduce((a, b) => a + b, 0);
+    raw.push({ ts: new Date(k * 60_000), w: Math.max(0, total - measured) });
+  }
+  return raw.length < 30 ? null : raw;
+}
+
 export async function detectLoadsOnce(): Promise<void> {
   const since = new Date(Date.now() - ANALYSIS_HOURS * 3_600_000);
 
@@ -43,77 +137,27 @@ export async function detectLoadsOnce(): Promise<void> {
     where: { enabled: true },
   });
 
-  // Source de la série conso : on privilegie un CONSUMPTION_METER dédié,
-  // sinon on reconstruit depuis prod + grid (comme /api/loads/live).
-  const cons = await prisma.device.findFirst({
-    where: { enabled: true, role: "CONSUMPTION_METER" },
-  });
-  let raw: PowerSample[];
-  if (cons) {
-    const rows = await prisma.reading.findMany({
-      where: {
-        deviceId: cons.id,
-        ts: { gte: since },
-        powerW: { not: null },
-      },
-      orderBy: { ts: "asc" },
-      select: { ts: true, powerW: true },
-    });
-    if (rows.length < 30) return;
-    raw = rows.map((r) => ({
-      ts: r.ts,
-      w: Math.max(0, r.powerW ?? 0),
-    }));
-  } else {
-    const [prodDev, gridDev] = await Promise.all([
-      prisma.device.findFirst({
-        where: { enabled: true, role: "PRODUCTION_METER" },
-      }),
-      prisma.device.findFirst({
-        where: { enabled: true, role: "GRID_METER" },
-      }),
-    ]);
-    if (!prodDev || !gridDev) return;
-    const [prodRows, gridRows] = await Promise.all([
-      prisma.reading.findMany({
-        where: { deviceId: prodDev.id, ts: { gte: since }, powerW: { not: null } },
-        orderBy: { ts: "asc" },
-        select: { ts: true, powerW: true },
-      }),
-      prisma.reading.findMany({
-        where: { deviceId: gridDev.id, ts: { gte: since }, powerW: { not: null } },
-        orderBy: { ts: "asc" },
-        select: { ts: true, powerW: true },
-      }),
-    ]);
-    // Joint par minute (bucketise) : conso ≈ prod + grid_signé.
-    const bucket = (rows: { ts: Date; powerW: number | null }[]) => {
-      const map = new Map<number, number[]>();
-      for (const r of rows) {
-        if (r.powerW === null) continue;
-        const k = Math.floor(r.ts.getTime() / 60_000);
-        const a = map.get(k) ?? [];
-        a.push(r.powerW);
-        map.set(k, a);
-      }
-      const out = new Map<number, number>();
-      for (const [k, vs] of map)
-        out.set(k, vs.reduce((a, b) => a + b, 0) / vs.length);
-      return out;
-    };
-    const pB = bucket(prodRows);
-    const gB = bucket(gridRows);
-    raw = [];
-    for (const [k, p] of pB) {
-      const g = gB.get(k);
-      if (g === undefined) continue;
-      raw.push({ ts: new Date(k * 60_000), w: Math.max(0, p + g) });
-    }
-    raw.sort((a, b) => a.ts.getTime() - b.ts.getTime());
-    if (raw.length < 30) return;
+  // Les profils reliés à une prise mesurée (jacuzzi, voiture) n'ont rien à
+  // deviner : leur conso est connue directement. Les autres sont cherchés
+  // sur le compteur de LEUR réseau — avant, tous l'étaient sur le compteur
+  // maison, d'où des cycles fantômes (voiture « 4 371 kWh » prise hors ligne).
+  const guessed = profiles.filter((p) => !p.measuredDeviceId);
+  const r2 = guessed.filter((p) => isNetwork2(`${p.id} ${p.name}`));
+  const r1 = guessed.filter((p) => !isNetwork2(`${p.id} ${p.name}`));
+
+  const smoothed: PowerSample[][] = [];
+  const edges: Edge[] = [];
+  for (const [list, series] of [
+    [r1, r1.length ? await network1Series(since) : null],
+    [r2, r2.length ? await network2Series(since) : null],
+  ] as const) {
+    if (!series || list.length === 0) continue;
+    const smooth = movingAverage(series, SMOOTH_MIN);
+    smoothed.push(smooth);
+    edges.push(...detectEdges(smooth, list, LAG_MIN));
   }
-  const smooth = movingAverage(raw, SMOOTH_MIN);
-  const edges = detectEdges(smooth, profiles, LAG_MIN);
+  if (smoothed.length === 0) return;
+  const smooth = smoothed.flat().sort((a, b) => a.ts.getTime() - b.ts.getTime());
 
   // Apparie les fronts par profil.
   const newEvents: Array<{

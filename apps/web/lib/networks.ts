@@ -2,6 +2,9 @@
 // piscine, jacuzzi, pompe à chaleur et prises / bornes de recharge de
 // voiture électrique. Testé sur le nom de l'appareil ou du profil de
 // charge (id + nom).
+// ⚠️ Même règle que packages/shared/src/networks.ts (utilisée par le worker) :
+// copie volontaire, @app/shared tire des modules Node (mqtt…) incompatibles
+// avec les composants client qui importent ce fichier. Modifier les deux.
 
 const NETWORK2_RE =
   /piscine|jacuzzi|\bspa\b|pool|chaleur|\bpac\b|heat ?pump|voiture|borne|\bve\b|\bev\b|lp_ev/i;
