@@ -87,6 +87,15 @@ globals:
   - { id: g_tempo_dem, type: std::string, initial_value: '""' }
   - { id: g_meteo, type: std::string, initial_value: '""' }
   - { id: g_last_ok, type: uint32_t, initial_value: "0" }
+  - { id: g_jac_t, type: float, initial_value: "-99" }
+  - { id: g_jac_c, type: float, initial_value: "-99" }
+  - { id: g_jac_h, type: int, initial_value: "-1" }
+  - { id: g_jac_f, type: int, initial_value: "-1" }
+  - { id: g_jac_w, type: int, initial_value: "0" }
+  - { id: g_chart_at, type: uint32_t, initial_value: "0" }
+  - { id: g_chart_max, type: int, initial_value: "0" }
+  - { id: g_last_touch, type: uint32_t, initial_value: "0" }
+  - { id: g_solar_at, type: uint32_t, initial_value: "0" }
 
 # ── FONTS ──────────────────────────────────────────────
 font:
@@ -194,248 +203,845 @@ touchscreen:
     update_interval: 50ms
     address: 0x5D
     on_touch:
+      - lambda: id(g_last_touch) = millis();
       - script.execute: wake_screen
 
 # ── INTERFACE ──────────────────────────────────────────
 lvgl:
   bg_color: 0x0D1117
+  page_wrap: true
 
-  widgets:
+  pages:
+    # ═══ PAGE 1 : TEMPS REEL ═══════════════════════════
+    - id: main_page
+      bg_color: 0x0D1117
+      scrollable: false
+      on_swipe_left:
+        - lvgl.page.next:
+      on_swipe_right:
+        - lvgl.page.previous:
+      widgets:
 
-    # ── HORLOGE ──────────────────────────────────────────
-    - label:
-        id: clock_label
-        align: TOP_MID
-        y: 45
-        text_font: montserrat_48
-        text_color: 0xFFFFFF
-        bg_opa: TRANSP
-        text: "--:--"
+        # ── HORLOGE ──────────────────────────────────────────
+        - label:
+            id: clock_label
+            align: TOP_MID
+            y: 45
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
+            bg_opa: TRANSP
+            text: "--:--"
 
-    # ── DATE ─────────────────────────────────────────────
-    - label:
-        id: date_label
-        align: TOP_MID
-        y: 115
-        text_font: montserrat_16
-        text_color: 0x8B949E
-        bg_opa: TRANSP
-        text: "--- -- ----"
+        # ── DATE ─────────────────────────────────────────────
+        - label:
+            id: date_label
+            align: TOP_MID
+            y: 115
+            text_font: montserrat_16
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "--- -- ----"
 
-    # ── SEPARATEUR ───────────────────────────────────────
-    - obj:
-        x: 20
-        y: 148
-        width: 440
-        height: 2
-        bg_color: 0x21262D
-        border_width: 0
-        radius: 0
+        # ── SEPARATEUR ───────────────────────────────────────
+        - obj:
+            x: 20
+            y: 148
+            width: 440
+            height: 2
+            bg_color: 0x21262D
+            border_width: 0
+            radius: 0
 
-    # ── CARTE METEO + TEMPO (gauche) ─────────────────────
-    - obj:
-        x: 10
-        y: 162
-        width: 220
-        height: 308
-        bg_color: 0x161B22
-        border_width: 1
-        border_color: 0x30363D
-        radius: 16
-        scrollable: false
-        widgets:
-          - label:
-              align: TOP_MID
-              y: 4
-              text_font: montserrat_14
-              text_color: 0x58A6FF
-              bg_opa: TRANSP
-              text: "METEO"
-          - label:
-              id: weather_icon
-              align: TOP_MID
-              y: 28
-              text_font: mdi_font_48
-              text_color: 0x58A6FF
-              bg_opa: TRANSP
-              text: "\U000F0898"
-          - label:
-              id: weather_label
-              align: TOP_MID
-              y: 88
-              text_font: montserrat_16
-              text_color: 0xA0B4CC
-              bg_opa: TRANSP
-              text: "chargement"
-          - label:
-              id: temp_label
-              align: TOP_MID
-              y: 114
-              text_font: montserrat_22
-              text_color: 0xFFFFFF
-              bg_opa: TRANSP
-              text: "--°C"
-          - obj:
-              align: TOP_MID
-              y: 152
-              width: 170
-              height: 1
-              bg_color: 0x30363D
-              border_width: 0
-              radius: 0
-          - label:
-              align: TOP_MID
-              y: 164
-              text_font: montserrat_14
-              text_color: 0x8B949E
-              bg_opa: TRANSP
-              text: "TEMPO"
-          - obj:
-              id: tempo_today_pill
-              align: TOP_MID
-              y: 188
-              width: 180
-              height: 38
-              radius: 19
-              border_width: 0
-              bg_color: 0x30363D
-              scrollable: false
-              widgets:
-                - label:
-                    id: tempo_today_label
-                    align: CENTER
-                    text_font: montserrat_16
-                    text_color: 0xFFFFFF
-                    bg_opa: TRANSP
-                    text: "Auj. --"
-          - obj:
-              id: tempo_dem_pill
-              align: TOP_MID
-              y: 236
-              width: 180
-              height: 30
-              radius: 15
-              border_width: 0
-              bg_color: 0x30363D
-              scrollable: false
-              widgets:
-                - label:
-                    id: tempo_dem_label
-                    align: CENTER
-                    text_font: montserrat_14
-                    text_color: 0xFFFFFF
-                    bg_opa: TRANSP
-                    text: "Demain --"
+        # ── CARTE METEO + TEMPO (gauche) ─────────────────────
+        - obj:
+            x: 10
+            y: 162
+            width: 220
+            height: 308
+            bg_color: 0x161B22
+            border_width: 1
+            border_color: 0x30363D
+            radius: 16
+            scrollable: false
+            widgets:
+              - label:
+                  align: TOP_MID
+                  y: 4
+                  text_font: montserrat_14
+                  text_color: 0x58A6FF
+                  bg_opa: TRANSP
+                  text: "METEO"
+              - label:
+                  id: weather_icon
+                  align: TOP_MID
+                  y: 28
+                  text_font: mdi_font_48
+                  text_color: 0x58A6FF
+                  bg_opa: TRANSP
+                  text: "\U000F0898"
+              - label:
+                  id: weather_label
+                  align: TOP_MID
+                  y: 88
+                  text_font: montserrat_16
+                  text_color: 0xA0B4CC
+                  bg_opa: TRANSP
+                  text: "chargement"
+              - label:
+                  id: temp_label
+                  align: TOP_MID
+                  y: 114
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--°C"
+              - obj:
+                  align: TOP_MID
+                  y: 152
+                  width: 170
+                  height: 1
+                  bg_color: 0x30363D
+                  border_width: 0
+                  radius: 0
+              - label:
+                  align: TOP_MID
+                  y: 164
+                  text_font: montserrat_14
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "TEMPO"
+              - obj:
+                  id: tempo_today_pill
+                  align: TOP_MID
+                  y: 188
+                  width: 180
+                  height: 38
+                  radius: 19
+                  border_width: 0
+                  bg_color: 0x30363D
+                  scrollable: false
+                  widgets:
+                    - label:
+                        id: tempo_today_label
+                        align: CENTER
+                        text_font: montserrat_16
+                        text_color: 0xFFFFFF
+                        bg_opa: TRANSP
+                        text: "Auj. --"
+              - obj:
+                  id: tempo_dem_pill
+                  align: TOP_MID
+                  y: 236
+                  width: 180
+                  height: 30
+                  radius: 15
+                  border_width: 0
+                  bg_color: 0x30363D
+                  scrollable: false
+                  widgets:
+                    - label:
+                        id: tempo_dem_label
+                        align: CENTER
+                        text_font: montserrat_14
+                        text_color: 0xFFFFFF
+                        bg_opa: TRANSP
+                        text: "Demain --"
 
-    # ── CARTE PRODUCTION ─────────────────────────────────
-    - obj:
-        x: 245
-        y: 162
-        width: 225
-        height: 96
-        bg_color: 0x161B22
-        border_width: 1
-        border_color: 0x30363D
-        radius: 16
-        scrollable: false
-        widgets:
-          - label:
-              align: TOP_MID
-              y: -6
-              text_font: montserrat_14
-              text_color: 0x3FB950
-              bg_opa: TRANSP
-              text: "PRODUCTION"
-          - label:
-              id: production_label
-              align: CENTER
-              y: 2
-              text_font: montserrat_32
-              text_color: 0x3FB950
-              bg_opa: TRANSP
-              text: "--"
-          - label:
-              align: BOTTOM_MID
-              y: 6
-              text_font: montserrat_12
-              text_color: 0x8B949E
-              bg_opa: TRANSP
-              text: "Watts"
+        # ── CARTE PRODUCTION ─────────────────────────────────
+        - obj:
+            x: 245
+            y: 162
+            width: 225
+            height: 96
+            bg_color: 0x161B22
+            border_width: 1
+            border_color: 0x30363D
+            radius: 16
+            scrollable: false
+            widgets:
+              - label:
+                  align: TOP_MID
+                  y: -6
+                  text_font: montserrat_14
+                  text_color: 0x3FB950
+                  bg_opa: TRANSP
+                  text: "PRODUCTION"
+              - label:
+                  id: production_label
+                  align: CENTER
+                  y: 2
+                  text_font: montserrat_32
+                  text_color: 0x3FB950
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: 6
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "Watts"
 
-    # ── CARTE RESEAU (en gros : achat / injection ; en petit : conso)
-    #    Fond rouge = achat, vert = injection.
-    - obj:
-        id: consumption_card
-        x: 245
-        y: 266
-        width: 225
-        height: 96
-        bg_color: 0x161B22
-        border_width: 1
-        border_color: 0x30363D
-        radius: 16
-        scrollable: false
-        widgets:
-          - label:
-              id: grid_title_label
-              align: TOP_MID
-              y: -6
-              text_font: montserrat_14
-              text_color: 0xFFFFFF
-              bg_opa: TRANSP
-              text: "RESEAU"
-          - label:
-              id: grid_label
-              align: CENTER
-              y: 2
-              text_font: montserrat_32
-              text_color: 0xFFFFFF
-              bg_opa: TRANSP
-              text: "--"
-          - label:
-              id: consumption_label
-              align: BOTTOM_MID
-              y: 6
-              text_font: montserrat_12
-              text_color: 0xC9D1D9
-              bg_opa: TRANSP
-              text: "conso --"
+        # ── CARTE RESEAU (en gros : achat / injection ; en petit : conso)
+        #    Fond rouge = achat, vert = injection.
+        - obj:
+            id: consumption_card
+            x: 245
+            y: 266
+            width: 225
+            height: 96
+            bg_color: 0x161B22
+            border_width: 1
+            border_color: 0x30363D
+            radius: 16
+            scrollable: false
+            widgets:
+              - label:
+                  id: grid_title_label
+                  align: TOP_MID
+                  y: -6
+                  text_font: montserrat_14
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "RESEAU"
+              - label:
+                  id: grid_label
+                  align: CENTER
+                  y: 2
+                  text_font: montserrat_32
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  id: consumption_label
+                  align: BOTTOM_MID
+                  y: 6
+                  text_font: montserrat_12
+                  text_color: 0xC9D1D9
+                  bg_opa: TRANSP
+                  text: "conso --"
 
-    # ── CARTE BATTERIE ───────────────────────────────────
-    - obj:
-        x: 245
-        y: 370
-        width: 225
-        height: 100
-        bg_color: 0x161B22
-        border_width: 1
-        border_color: 0x30363D
-        radius: 16
-        scrollable: false
-        widgets:
-          - label:
-              align: TOP_MID
-              y: -6
-              text_font: montserrat_14
-              text_color: 0xA371F7
-              bg_opa: TRANSP
-              text: "BATTERIE"
-          - label:
-              id: battery_label
-              align: CENTER
-              y: 2
-              text_font: montserrat_32
-              text_color: 0xA371F7
-              bg_opa: TRANSP
-              text: "--"
-          - label:
-              id: battery_state_label
-              align: BOTTOM_MID
-              y: 6
-              text_font: montserrat_12
-              text_color: 0x8B949E
-              bg_opa: TRANSP
-              text: "--"
+        # ── CARTE BATTERIE ───────────────────────────────────
+        - obj:
+            x: 245
+            y: 370
+            width: 225
+            height: 100
+            bg_color: 0x161B22
+            border_width: 1
+            border_color: 0x30363D
+            radius: 16
+            scrollable: false
+            widgets:
+              - label:
+                  align: TOP_MID
+                  y: -6
+                  text_font: montserrat_14
+                  text_color: 0xA371F7
+                  bg_opa: TRANSP
+                  text: "BATTERIE"
+              - label:
+                  id: battery_label
+                  align: CENTER
+                  y: 2
+                  text_font: montserrat_32
+                  text_color: 0xA371F7
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  id: battery_state_label
+                  align: BOTTOM_MID
+                  y: 6
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "--"
+
+    # ═══ PAGE 2 : JACUZZI + COURBE 24 H ═════════════════
+    - id: info_page
+      bg_color: 0x0D1117
+      scrollable: false
+      on_swipe_left:
+        - lvgl.page.next:
+      on_swipe_right:
+        - lvgl.page.previous:
+      widgets:
+
+        - label:
+            id: clock2_label
+            align: TOP_MID
+            y: 10
+            text_font: montserrat_22
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "--:--"
+
+        # ── CARTE JACUZZI ────────────────────────────────────
+        - obj:
+            x: 10
+            y: 46
+            width: 460
+            height: 154
+            pad_all: 0
+            bg_color: 0x161B22
+            border_width: 1
+            border_color: 0x30363D
+            radius: 16
+            scrollable: false
+            widgets:
+              - label:
+                  x: 18
+                  y: 14
+                  text_font: montserrat_14
+                  text_color: 0x22D3EE
+                  bg_opa: TRANSP
+                  text: "JACUZZI"
+              - label:
+                  id: jac_temp_label
+                  x: 18
+                  y: 46
+                  text_font: montserrat_48
+                  text_color: 0x22D3EE
+                  bg_opa: TRANSP
+                  text: "--°C"
+              - label:
+                  id: jac_preset_label
+                  x: 18
+                  y: 112
+                  text_font: montserrat_14
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "consigne --°C"
+              - label:
+                  id: jac_heat_label
+                  x: 250
+                  y: 30
+                  text_font: montserrat_18
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "Chauffe --"
+              - label:
+                  id: jac_filter_label
+                  x: 250
+                  y: 64
+                  text_font: montserrat_18
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "Filtration --"
+              - label:
+                  id: jac_power_label
+                  x: 250
+                  y: 98
+                  text_font: montserrat_18
+                  text_color: 0xC9D1D9
+                  bg_opa: TRANSP
+                  text: "-- W"
+
+        # ── CARTE COURBE 24 H ────────────────────────────────
+        - obj:
+            x: 10
+            y: 210
+            width: 460
+            height: 260
+            pad_all: 0
+            bg_color: 0x161B22
+            border_width: 1
+            border_color: 0x30363D
+            radius: 16
+            scrollable: false
+            widgets:
+              - label:
+                  x: 18
+                  y: 12
+                  text_font: montserrat_14
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "RESEAU 1 - 24 H"
+              - label:
+                  x: 200
+                  y: 12
+                  text_font: montserrat_14
+                  text_color: 0x3FB950
+                  bg_opa: TRANSP
+                  text: "production"
+              - label:
+                  x: 315
+                  y: 12
+                  text_font: montserrat_14
+                  text_color: 0xF0883E
+                  bg_opa: TRANSP
+                  text: "conso"
+              - label:
+                  id: chart_max_label
+                  x: 18
+                  y: 34
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "-- kW"
+              # Grille : haut, milieu, bas de la zone 420 × 170 (x 20, y 50)
+              - obj: { x: 20, y: 50, width: 420, height: 1, bg_color: 0x21262D, border_width: 0, radius: 0 }
+              - obj: { x: 20, y: 135, width: 420, height: 1, bg_color: 0x21262D, border_width: 0, radius: 0 }
+              - obj: { x: 20, y: 220, width: 420, height: 1, bg_color: 0x30363D, border_width: 0, radius: 0 }
+              - line:
+                  id: chart_conso
+                  x: 20
+                  y: 50
+                  points: [[0, 170], [420, 170]]
+                  line_width: 2
+                  line_color: 0xF0883E
+                  line_rounded: true
+              - line:
+                  id: chart_prod
+                  x: 20
+                  y: 50
+                  points: [[0, 170], [420, 170]]
+                  line_width: 3
+                  line_color: 0x3FB950
+                  line_rounded: true
+              - label:
+                  x: 18
+                  y: 228
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "-24 h"
+              - label:
+                  x: 212
+                  y: 228
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "-12 h"
+              - label:
+                  x: 386
+                  y: 228
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "maint."
+
+
+    # ═══ PAGE 3 : PRODUCTION PAR PANNEAU ═══════════════
+    # Ordre physique gauche → droite (cf. apps/web/lib/solar-layout.ts).
+    - id: panels_page
+      bg_color: 0x0D1117
+      scrollable: false
+      on_swipe_left:
+        - lvgl.page.next:
+      on_swipe_right:
+        - lvgl.page.previous:
+      widgets:
+        - label:
+            id: clock3_label
+            align: TOP_MID
+            y: 10
+            text_font: montserrat_22
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "--:--"
+        - label:
+            id: sp_z0
+            x: 16
+            y: 44
+            text_font: montserrat_16
+            text_color: 0xFFFFFF
+            bg_opa: TRANSP
+            text: "JARDIN"
+        - obj:
+            id: sp_t0
+            x: 16
+            y: 72
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l0
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P1 W"
+        - obj:
+            id: sp_t1
+            x: 88
+            y: 72
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l1
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P2 W"
+        - obj:
+            id: sp_t2
+            x: 170
+            y: 72
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l2
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P1 W"
+        - obj:
+            id: sp_t3
+            x: 242
+            y: 72
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l3
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P2 W"
+        - obj:
+            id: sp_t4
+            x: 324
+            y: 72
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l4
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P1 W"
+        - obj:
+            id: sp_t5
+            x: 396
+            y: 72
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l5
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P2 W"
+        - label:
+            x: 60
+            y: 190
+            text_font: montserrat_12
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "201323"
+        - label:
+            x: 214
+            y: 190
+            text_font: montserrat_12
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "724293"
+        - label:
+            x: 368
+            y: 190
+            text_font: montserrat_12
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "728874"
+        - label:
+            id: sp_z1
+            x: 16
+            y: 244
+            text_font: montserrat_16
+            text_color: 0xFFFFFF
+            bg_opa: TRANSP
+            text: "ABRI"
+        - obj:
+            id: sp_t6
+            x: 16
+            y: 272
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l6
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P1 W"
+        - obj:
+            id: sp_t7
+            x: 88
+            y: 272
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l7
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P2 W"
+        - obj:
+            id: sp_t8
+            x: 170
+            y: 272
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l8
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P1 W"
+        - obj:
+            id: sp_t9
+            x: 242
+            y: 272
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l9
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P2 W"
+        - obj:
+            id: sp_t10
+            x: 324
+            y: 272
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l10
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P1 W"
+        - obj:
+            id: sp_t11
+            x: 396
+            y: 272
+            width: 68
+            height: 112
+            pad_all: 0
+            radius: 8
+            bg_color: 0x161B22
+            border_width: 2
+            border_color: 0x30363D
+            scrollable: false
+            widgets:
+              - label:
+                  id: sp_l11
+                  align: CENTER
+                  y: -8
+                  text_font: montserrat_22
+                  text_color: 0xFFFFFF
+                  bg_opa: TRANSP
+                  text: "--"
+              - label:
+                  align: BOTTOM_MID
+                  y: -10
+                  text_font: montserrat_12
+                  text_color: 0x8B949E
+                  bg_opa: TRANSP
+                  text: "P2 W"
+        - label:
+            x: 60
+            y: 390
+            text_font: montserrat_12
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "988780"
+        - label:
+            x: 214
+            y: 390
+            text_font: montserrat_12
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "198170"
+        - label:
+            x: 368
+            y: 390
+            text_font: montserrat_12
+            text_color: 0x8B949E
+            bg_opa: TRANSP
+            text: "197256"
+        - label:
+            id: sp_tot
+            align: BOTTOM_MID
+            y: -14
+            text_font: montserrat_16
+            text_color: 0x3FB950
+            bg_opa: TRANSP
+            text: "--"
 
 interval:
   # ── Lecture de l'appli ───────────────────────────────
@@ -448,7 +1054,7 @@ interval:
             - http_request.get:
                 url: ${screen_api_url}
                 capture_response: true
-                max_response_buffer_size: 512
+                max_response_buffer_size: 1024
                 on_response:
                   then:
                     - lambda: |-
@@ -467,6 +1073,11 @@ interval:
                           id(g_tempo) = std::string(root["tempo"] | "");
                           id(g_tempo_dem) = std::string(root["tempo_dem"] | "");
                           id(g_meteo) = std::string(root["meteo"] | "");
+                          id(g_jac_t) = root["jac_t"] | -99.0f;
+                          id(g_jac_c) = root["jac_c"] | -99.0f;
+                          id(g_jac_h) = root["jac_h"] | -1;
+                          id(g_jac_f) = root["jac_f"] | -1;
+                          id(g_jac_w) = root["jac_w"] | 0;
                           return true;
                         });
                         if (ok) id(g_last_ok) = millis();
@@ -664,3 +1275,178 @@ interval:
             if (s == "windy")            return std::string("Venteux");
             if (s == "hail")             return std::string("Grele");
             return s;
+
+  # ── Courbe 24 h : lue au démarrage puis toutes les 5 min ───
+  - interval: 20s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return wifi::global_wifi_component->is_connected() &&
+                     (id(g_chart_at) == 0 || millis() - id(g_chart_at) > 300000);
+          then:
+            - http_request.get:
+                url: ${screen_api_url}/chart
+                capture_response: true
+                max_response_buffer_size: 2048
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) return;
+                        json::parse_json(body, [](JsonObject root) -> bool {
+                          int mx = root["max"] | 1000;
+                          if (mx <= 0) mx = 1000;
+                          // Zone de tracé 420 × 170 px ; -1 (pas de mesure) → 0.
+                          // LVGL 9 (ESPHome ≥ 2026.x) : FixedVector<lv_point_precise_t>.
+                          auto build = [mx](JsonArray arr) {
+                            FixedVector<lv_point_precise_t> pts;
+                            int n = arr.size();
+                            if (n < 2) return pts;
+                            pts.init(n);
+                            int i = 0;
+                            for (JsonVariant v : arr) {
+                              int w = v.as<int>();
+                              if (w < 0) w = 0;
+                              if (w > mx) w = mx;
+                              lv_point_precise_t pt;
+                              pt.x = (lv_value_precise_t) (i * 420 / (n - 1));
+                              pt.y = (lv_value_precise_t) (170 - (long) w * 170 / mx);
+                              pts.push_back(pt);
+                              i++;
+                            }
+                            return pts;
+                          };
+                          auto pp = build(root["p"].as<JsonArray>());
+                          auto cc = build(root["c"].as<JsonArray>());
+                          if (pp.size() >= 2) id(chart_prod)->set_points(std::move(pp));
+                          if (cc.size() >= 2) id(chart_conso)->set_points(std::move(cc));
+                          id(g_chart_max) = mx;
+                          return true;
+                        });
+                        id(g_chart_at) = millis();
+                    - lvgl.label.update:
+                        id: chart_max_label
+                        text: !lambda |-
+                          char buf[16];
+                          int mx = id(g_chart_max);
+                          if (mx >= 1000) snprintf(buf, sizeof(buf), "%.1f kW", mx / 1000.0f);
+                          else snprintf(buf, sizeof(buf), "%d W", mx);
+                          return std::string(buf);
+
+  # ── Défilement automatique (15 s), suspendu 1 min après un toucher ──
+  - interval: 15s
+    then:
+      - if:
+          condition:
+            lambda: return millis() - id(g_last_touch) > 60000;
+          then:
+            - lvgl.page.next:
+
+  # ── Page 2 : horloge + jacuzzi ───────────────────────
+  - interval: 2s
+    then:
+      - lvgl.label.update:
+          id: clock2_label
+          text: !lambda |-
+            auto now = id(sntp_time).now();
+            if (!now.is_valid()) return std::string("--:--");
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%02d:%02d", now.hour, now.minute);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: jac_temp_label
+          text: !lambda |-
+            if (id(g_jac_t) <= -98) return std::string("--°C");
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f°C", id(g_jac_t));
+            return std::string(buf);
+          text_color: !lambda |-
+            // Orange si on chauffe vers la consigne, cyan sinon.
+            return id(g_jac_h) == 1 ? lv_color_hex(0xF0883E) : lv_color_hex(0x22D3EE);
+      - lvgl.label.update:
+          id: jac_preset_label
+          text: !lambda |-
+            if (id(g_jac_c) <= -98) return std::string("consigne --°C");
+            char buf[24];
+            snprintf(buf, sizeof(buf), "consigne %.0f°C", id(g_jac_c));
+            return std::string(buf);
+      - lvgl.label.update:
+          id: jac_heat_label
+          text: !lambda |-
+            int h = id(g_jac_h);
+            return std::string(h == 1 ? "Chauffe ON" : h == 0 ? "Chauffe OFF" : "Chauffe --");
+          text_color: !lambda |-
+            return id(g_jac_h) == 1 ? lv_color_hex(0xF0883E) : lv_color_hex(0x8B949E);
+      - lvgl.label.update:
+          id: jac_filter_label
+          text: !lambda |-
+            int f = id(g_jac_f);
+            return std::string(f == 1 ? "Filtration ON" : f == 0 ? "Filtration OFF" : "Filtration --");
+          text_color: !lambda |-
+            return id(g_jac_f) == 1 ? lv_color_hex(0x3FB950) : lv_color_hex(0x8B949E);
+      - lvgl.label.update:
+          id: jac_power_label
+          text: !lambda |-
+            bool stale = id(g_last_ok) == 0 || millis() - id(g_last_ok) > 30000;
+            if (stale) return std::string("-- W");
+            return std::to_string(id(g_jac_w)) + " W";
+
+  # ── Page 3 : production par panneau (60 s ; l'ECU publie toutes les 5 min) ──
+  - interval: 15s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return wifi::global_wifi_component->is_connected() &&
+                     (id(g_solar_at) == 0 || millis() - id(g_solar_at) > 60000);
+          then:
+            - http_request.get:
+                url: ${screen_api_url}/solar
+                capture_response: true
+                max_response_buffer_size: 512
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) return;
+                        json::parse_json(body, [](JsonObject root) -> bool {
+                          lv_obj_t *tiles[12] = {
+                            id(sp_t0), id(sp_t1), id(sp_t2), id(sp_t3), id(sp_t4), id(sp_t5),
+                            id(sp_t6), id(sp_t7), id(sp_t8), id(sp_t9), id(sp_t10), id(sp_t11)};
+                          lv_obj_t *labels[12] = {
+                            id(sp_l0), id(sp_l1), id(sp_l2), id(sp_l3), id(sp_l4), id(sp_l5),
+                            id(sp_l6), id(sp_l7), id(sp_l8), id(sp_l9), id(sp_l10), id(sp_l11)};
+                          JsonArray w = root["w"].as<JsonArray>();
+                          JsonArray st = root["s"].as<JsonArray>();
+                          for (int i = 0; i < 12; i++) {
+                            int watts = w[i] | -1;
+                            int state = st[i] | 0;
+                            // 0 indispo, 1 production, 2 0 W, 3 pas de réseau AC
+                            uint32_t bg = 0x161B22, border = 0x30363D, txt = 0x8B949E;
+                            if (state == 1) { bg = 0x12301F; border = 0x3FB950; txt = 0xFFFFFF; }
+                            else if (state == 2) { txt = 0xC9D1D9; }
+                            else if (state == 3) { bg = 0x3A1418; border = 0xF85149; txt = 0xF85149; }
+                            lv_obj_set_style_bg_color(tiles[i], lv_color_hex(bg), LV_PART_MAIN);
+                            lv_obj_set_style_border_color(tiles[i], lv_color_hex(border), LV_PART_MAIN);
+                            lv_obj_set_style_text_color(labels[i], lv_color_hex(txt), LV_PART_MAIN);
+                            if (state == 0 || watts < 0) lv_label_set_text(labels[i], "--");
+                            else lv_label_set_text(labels[i], std::to_string(watts).c_str());
+                          }
+                          char buf[40];
+                          snprintf(buf, sizeof(buf), "JARDIN   %d W", (int) (root["z0"] | 0));
+                          lv_label_set_text(id(sp_z0), buf);
+                          snprintf(buf, sizeof(buf), "ABRI   %d W", (int) (root["z1"] | 0));
+                          lv_label_set_text(id(sp_z1), buf);
+                          int tot = (int) (root["z0"] | 0) + (int) (root["z1"] | 0);
+                          snprintf(buf, sizeof(buf), "Total %d W  -  %d/12 en production", tot, (int) (root["on"] | 0));
+                          lv_label_set_text(id(sp_tot), buf);
+                          return true;
+                        });
+                        id(g_solar_at) = millis();
+      - lvgl.label.update:
+          id: clock3_label
+          text: !lambda |-
+            auto now = id(sntp_time).now();
+            if (!now.is_valid()) return std::string("--:--");
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%02d:%02d", now.hour, now.minute);
+            return std::string(buf);
