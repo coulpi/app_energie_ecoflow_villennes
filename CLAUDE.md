@@ -373,6 +373,20 @@ Les deux réseaux sont suivis **séparément** :
 - `updateDevice` fusionne `vendorMeta` (ne réécrit plus `{model}` seul, ce
   qui effaçait `channel` / `invertSign`).
 
+## Détection historique des cycles (`apps/worker/src/agent/loads.ts`, toutes les 30 min)
+
+Fronts de puissance sur 48 h → `LoadEvent` → planning détecté. **Chaque
+profil sur le compteur de SON réseau** (corrigé le 2026-10-16 : tout était
+cherché sur la conso maison, d'où des cycles fantômes — voiture « 4 371 kWh »
+avec sa prise hors ligne ; 1 944 événements faux purgés) :
+- profils reliés à une prise (`measuredDeviceId` : jacuzzi, voiture) : **pas
+  devinés**, leur conso est mesurée ;
+- réseau 1 : `CONSUMPTION_METER` (ou prod + grid) ;
+- réseau 2 (`isNetwork2`, dans `@app/shared` côté worker) : compteur dédié
+  **moins** les prises mesurées du réseau 2 et la prise AC batterie.
+Les barres « (estimé) » de `/history` viennent de ces `LoadEvent`
+(énergie = puissance nominale du profil × durée).
+
 ## Détection live d'appareils (`/api/loads/live`)
 
 **Par réseau** : les profils non mesurés du réseau 2 (`isNetwork2` :
