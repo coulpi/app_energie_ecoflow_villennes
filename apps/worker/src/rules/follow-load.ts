@@ -92,11 +92,32 @@ const last: AppliedState = {
   powerstreamPriority: null,
 };
 
+/**
+ * Puissance fixe du PowerStream (custom load). Le PS injecte cette puissance
+ * depuis la batterie quelle que soit sa priorité : la priorité « stockage »
+ * seule n'empêche pas la décharge (vu le 17-19/10 : batterie vidée à ~330 W
+ * dès la fin du forçage, bien avant la fenêtre Tempo). Hors fenêtre on met
+ * donc 0 W, dans la fenêtre `tempoDischargeTargetW`.
+ */
+async function setPowerstreamWatts(sn: string, watts: number): Promise<void> {
+  const w = Math.max(0, Math.min(800, Math.round(watts)));
+  const { publishPowerStreamCommand } = await import("../pollers/ecoflow.js");
+  await publishPowerStreamCommand(sn, { kind: "permanentWatts", watts: w });
+  await prisma.controlState.update({
+    where: { key: "default" },
+    data: { powerstreamPermanentW: w } as never,
+  });
+  log.info("follow-load: powerstream puissance fixe", { watts: w });
+}
+
 async function setPowerstreamPriority(
   sn: string,
   priority: 0 | 1,
+  force = false,
 ): Promise<void> {
-  if (last.powerstreamPriority === priority) return;
+  // Pas de télémétrie PS : l'état mémorisé peut être faux (app mobile,
+  // commande perdue) → `force` renvoie la commande sur les transitions.
+  if (!force && last.powerstreamPriority === priority) return;
   const { publishPowerStreamCommand } = await import("../pollers/ecoflow.js");
   await publishPowerStreamCommand(sn, { kind: "supplyPriority", priority });
   await prisma.controlState.update({
@@ -491,6 +512,7 @@ export async function tickFollowLoad(): Promise<void> {
         tempoOtherDischargeHour?: number | null;
         tempoDischargeEndHour?: number | null;
         tempoWakeupBeforeMin?: number | null;
+        tempoDischargeTargetW?: number | null;
         powerstreamSn?: string | null;
         powerstreamPriority?: number | null;
         minDischargeSoc: number;
@@ -606,6 +628,7 @@ export async function tickFollowLoad(): Promise<void> {
   ) {
     try {
       await setPowerstreamPriority(ctrl.powerstreamSn, 1);
+      await setPowerstreamWatts(ctrl.powerstreamSn, 0);
       log.info("follow-load: SoC plancher atteint, PS forcé en stockage", {
         soc,
         minDischargeSoc: ctrl.minDischargeSoc,
@@ -641,11 +664,18 @@ export async function tickFollowLoad(): Promise<void> {
     // l'état change, pour ne pas écraser un choix manuel utilisateur.
     if (ctrl.powerstreamSn && inWindow !== lastInTempoWindow) {
       const wantPriority: 0 | 1 = inWindow ? 0 : 1;
+      // Pas de décharge au-dessous du plancher même en entrant dans la fenêtre.
+      const wantWatts =
+        inWindow && (soc === null || soc > ctrl.minDischargeSoc)
+          ? (ctrl.tempoDischargeTargetW ?? 400)
+          : 0;
       try {
-        await setPowerstreamPriority(ctrl.powerstreamSn, wantPriority);
+        await setPowerstreamPriority(ctrl.powerstreamSn, wantPriority, true);
+        await setPowerstreamWatts(ctrl.powerstreamSn, wantWatts);
         log.info("follow-load: tempo transition, PS priority pushed", {
           inWindow,
           priority: wantPriority,
+          watts: wantWatts,
         });
       } catch (e) {
         log.warn("follow-load: powerstream priority failed", {

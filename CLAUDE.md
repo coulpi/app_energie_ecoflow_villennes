@@ -217,7 +217,12 @@ Auto-conso bidirectionnelle : à chaque tick (toutes les `POLL_INTERVAL_SECONDS`
    `tempoOtherDischargeHour`) :
    - Sur **transition** d'entrée/sortie de fenêtre, push automatique de
      `powerstreamPriority` (0 entrée, 1 sortie). Hors transition, le
-     choix manuel utilisateur est respecté.
+     choix manuel utilisateur est respecté. La priorité est renvoyée
+     même si l'état mémorisé est identique (pas de télémétrie PS), et la
+     **puissance fixe** suit : `tempoDischargeTargetW` en entrée, **0 W** en
+     sortie (et au plancher SoC). La priorité « stockage » seule n'empêche
+     pas le PS de décharger la batterie sur sa puissance fixe (batterie
+     vidée à ~330 W dès la fin du forçage, 17-19/10/2026).
    - **Fenêtre de réveil** : `tempoWakeupBeforeMin` (défaut 15 min)
      avant `endHour`, on rallume la prise Tuya AC IN pour sortir la
      batterie de veille profonde, prête à charger dès l'aube.
