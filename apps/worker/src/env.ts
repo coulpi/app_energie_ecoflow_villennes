@@ -25,6 +25,9 @@ const Schema = z.object({
   OLLAMA_MODEL: z.string().default("gemma4:31b"),
   AGENT_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
   AGENT_ENABLED: envBool.default(true),
+  // false : l'agent propose seulement (proposition enregistrée sur /agent),
+  // sans modifier ControlState ni créer / remplacer de règles [agent].
+  AGENT_APPLY: envBool.default(false),
   BATTERY_CRITICAL_SOC: z.coerce.number().min(0).max(100).default(5),
   HOME_LAT: z.coerce.number().default(48.9436),
   HOME_LON: z.coerce.number().default(1.993),

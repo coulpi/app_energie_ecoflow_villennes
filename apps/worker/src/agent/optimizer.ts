@@ -540,6 +540,11 @@ export async function runAgent(
         ?.mode === "MANUAL";
     if (proposal && !dryRun && manual) {
       appliedJson = { skipped: "mode manuel" };
+    } else if (proposal && !dryRun && !env.AGENT_APPLY) {
+      // Propositions seulement : ses règles doublonnaient ou contredisaient
+      // le pilotage automatique (ex. coupure de la prise pendant une
+      // charge forcée). Réactivable via AGENT_APPLY=true.
+      appliedJson = { skipped: "propositions seulement (AGENT_APPLY=false)" };
     } else if (proposal && !dryRun) {
       const result = await applyProposal(proposal);
       applied = result.controlUpdated || result.rulesReplaced > 0;

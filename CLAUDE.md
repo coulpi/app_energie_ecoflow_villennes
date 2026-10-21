@@ -860,7 +860,8 @@ EcoFlow : `ECOFLOW_ACCESS_KEY`, `ECOFLOW_SECRET_KEY`, `ECOFLOW_API_BASE`
 `ECOFLOW_MQTT_BROKER/PORT`.
 Tuya : `TUYA_CLIENT_ID/SECRET/REGION/API_BASE`.
 Agent : `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `AGENT_INTERVAL_MINUTES`,
-`AGENT_ENABLED`. Maison : `HOME_LAT/LON/TZ`.
+`AGENT_ENABLED`, `AGENT_APPLY` (défaut false : l'agent propose seulement, sans
+modifier ControlState ni créer de règles). Maison : `HOME_LAT/LON/TZ`.
 Rétention : `RAW_RETENTION_DAYS` (30), `HOURLY_RETENTION_DAYS` (365).
 Sécurité batterie : `BATTERY_CRITICAL_SOC` (5).
 
