@@ -439,6 +439,16 @@ async function applyProposal(
 
   // Règles : remplace toutes les règles dont le nom commence par [agent].
   if (Array.isArray(proposal.rules)) {
+    // Une règle [agent] désactivée par l'utilisateur reste désactivée quand
+    // l'agent la recrée (même nom) : sinon elle revenait active à chaque run.
+    const disabledByUser = new Set(
+      (
+        await prisma.automationRule.findMany({
+          where: { name: { startsWith: AGENT_RULE_TAG }, enabled: false },
+          select: { name: true },
+        })
+      ).map((r) => r.name),
+    );
     await prisma.automationRule.deleteMany({
       where: { name: { startsWith: AGENT_RULE_TAG } },
     });
@@ -451,7 +461,7 @@ async function applyProposal(
         await prisma.automationRule.create({
           data: {
             name,
-            enabled: parsed.enabled,
+            enabled: parsed.enabled && !disabledByUser.has(name),
             priority: parsed.priority,
             conditionExpr: parsed.if as unknown as object,
             actions: parsed.then as unknown as object,
