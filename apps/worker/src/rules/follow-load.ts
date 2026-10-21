@@ -59,6 +59,9 @@ let lastInTempoWindow: boolean | null = null;
 // depuis le réseau piscine/jacuzzi (double conversion à perte). On mémorise
 // la priorité d'avant pour la restaurer. null = rien à restaurer.
 let psForceSaved: { sn: string; priority: 0 | 1 } | null = null;
+// Renvoi périodique de la priorité « stockage » pendant une charge forcée.
+const PS_STORAGE_RESEND_MS = 5 * 60_000;
+let psStorageSentMs = 0;
 
 export function getFollowLoadState(): {
   switchOn: boolean | null;
@@ -210,11 +213,26 @@ async function psStorageDuringForce(
   sn: string | null | undefined,
   currentPriority: number | null | undefined,
 ): Promise<void> {
-  if (!sn || psForceSaved !== null) return;
+  if (!sn) return;
+  if (psForceSaved !== null) {
+    // Le PowerStream ne remonte pas sa priorité : une commande perdue (ou
+    // un changement depuis l'app EcoFlow) passerait inaperçu et le PS
+    // resterait en alimentation pendant la charge. On renvoie donc
+    // « stockage » périodiquement tant que la charge forcée dure.
+    if (Date.now() - psStorageSentMs < PS_STORAGE_RESEND_MS) return;
+    try {
+      await setPowerstreamPriority(sn, 1, true);
+      psStorageSentMs = Date.now();
+    } catch (e) {
+      log.warn("force-charge: renvoi PS stockage échoué", { error: (e as Error).message });
+    }
+    return;
+  }
   const before: 0 | 1 =
     last.powerstreamPriority ?? (currentPriority === 1 ? 1 : 0);
   try {
-    await setPowerstreamPriority(sn, 1);
+    await setPowerstreamPriority(sn, 1, true);
+    psStorageSentMs = Date.now();
     psForceSaved = { sn, priority: before };
     log.info("force-charge: PowerStream en stockage pendant la charge", {
       previousPriority: before,

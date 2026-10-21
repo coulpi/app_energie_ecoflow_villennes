@@ -789,7 +789,10 @@ réseau** si le surplus solaire ne suffit pas. Piloté depuis la page
   atteint sans durée, durée écoulée, ou annulation). `endForceCharge` remet
   `forceChargeSoc/StartAt/EndAt = null` et `forceChargeCeilingHit = false`.
 - **PowerStream en stockage pendant la charge** : `psStorageDuringForce`
-  passe le PS en `priority=1` dès que la charge forcée tire (évite de
+  passe le PS en `priority=1` dès que la charge forcée tire, puis **renvoie
+  la commande toutes les 5 min** tant que la charge dure (pas de télémétrie
+  PS : une commande perdue ou un changement via l'app EcoFlow laissait le PS
+  en alimentation) (évite de
   réinjecter vers la maison ce qu'on charge depuis le réseau piscine/
   jacuzzi). `restorePsAfterForce` remet la priorité d'avant à la fin
   (cible, durée, annulation, maintien au plafond) et remet
