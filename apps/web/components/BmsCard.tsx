@@ -42,6 +42,69 @@ function Metric({
   );
 }
 
+const CELL_BAR: Record<Level, string> = {
+  ok: "bg-emerald-500",
+  warn: "bg-amber-500",
+  bad: "bg-rose-500",
+};
+
+/** Détail par cellule : jauge de tension relative + écart à la médiane. */
+function CellGrid({
+  cells,
+  temps,
+}: {
+  cells: NonNullable<BmsSummary["cells"]>;
+  temps: number[] | null;
+}) {
+  const vs = cells.map((c) => c.v);
+  // Échelle resserrée autour des tensions réelles pour rendre les écarts
+  // visibles (quelques dizaines de mV sur ~4 V).
+  const lo = Math.min(...vs) - 0.03;
+  const hi = Math.max(...vs) + 0.01;
+  const median = cells.find((c) => c.devMv === 0)?.v ?? vs.slice().sort((a, b) => a - b)[Math.floor(vs.length / 2)]!;
+  const outliers = cells.filter((c) => c.level !== "ok");
+  return (
+    <div className="mt-4 rounded-xl border border-zinc-800 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <span className="text-xs font-medium text-zinc-300">Détail par cellule</span>
+        <span className="text-[11px] text-zinc-500">
+          médiane {num(median, 3)} V
+          {temps && temps.length > 0 && ` · sondes ${temps.map((t) => `${t} °C`).join(" / ")}`}
+        </span>
+      </div>
+      <div className="grid grid-cols-7 md:grid-cols-[repeat(14,minmax(0,1fr))] gap-1.5">
+        {cells.map((c) => {
+          const pct = Math.max(8, Math.min(100, ((c.v - lo) / (hi - lo)) * 100));
+          return (
+            <div
+              key={c.index}
+              className="flex flex-col items-center gap-1 min-w-0"
+              title={`Cellule ${c.index} : ${num(c.v, 3)} V (${c.devMv > 0 ? "+" : ""}${c.devMv} mV / médiane)`}
+            >
+              <span className="text-[10px] tabular-nums text-zinc-400">{num(c.v, 3)}</span>
+              <div className="relative w-full max-w-[34px] h-16 rounded-md border border-zinc-800 overflow-hidden" style={{ background: "var(--track)" }}>
+                <div className={`absolute inset-x-0 bottom-0 ${CELL_BAR[c.level]}`} style={{ height: `${pct}%`, opacity: 0.85 }} />
+              </div>
+              <span className={`text-[10px] tabular-nums ${c.level === "ok" ? "text-zinc-500" : c.level === "warn" ? "text-amber-400" : "text-rose-400"}`}>
+                {c.devMv > 0 ? "+" : ""}
+                {c.devMv}
+              </span>
+              <span className="text-[10px] text-zinc-500">n°{c.index}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-[11px] text-zinc-500">
+        {outliers.length === 0
+          ? "Cellules homogènes : toutes à moins de 40 mV de la médiane."
+          : outliers
+              .map((c) => `Cellule ${c.index} : ${Math.abs(c.devMv)} mV ${c.devMv < 0 ? "sous" : "au-dessus de"} la médiane`)
+              .join(" · ") + ". Si l'écart persiste batterie au repos, la cellule est plus faible que les autres."}
+      </p>
+    </div>
+  );
+}
+
 export default function BmsCard() {
   const [b, setB] = useState<BmsSummary | null>(null);
   const [err, setErr] = useState(false);
@@ -147,6 +210,8 @@ export default function BmsCard() {
               sub={`MOSFET ${num(b.mosTempMax)} °C · onduleur ${num(b.inverterTemp)} °C`}
             />
           </div>
+
+          {b.cells && <CellGrid cells={b.cells} temps={b.cellTemps} />}
 
           <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-400">
             {b.remainMin !== null && b.remainMin > 0 && (

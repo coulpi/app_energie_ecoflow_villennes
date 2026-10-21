@@ -303,10 +303,15 @@ async function recordMqttReading(
 // ems.*, inv.*, pd.*, mppt.* reçu en MQTT (les messages sont partiels, on
 // fusionne). Lu par GET /battery/bms pour la carte « État de la batterie ».
 const BMS_PREFIX_RE = /^(bmsMaster|ems|inv|pd|mppt)\./;
-const bmsFields: Record<string, number> = {};
+const bmsFields: Record<string, number | number[]> = {};
+// Tableaux numériques retenus (détail par cellule).
+const BMS_ARRAY_FIELDS = new Set(["bmsMaster.cellVol", "bmsMaster.cellTemp"]);
 let bmsUpdatedAtMs = 0;
 
-export function getBmsState(): { updatedAt: string | null; fields: Record<string, number> } {
+export function getBmsState(): {
+  updatedAt: string | null;
+  fields: Record<string, number | number[]>;
+} {
   return {
     updatedAt: bmsUpdatedAtMs ? new Date(bmsUpdatedAtMs).toISOString() : null,
     fields: { ...bmsFields },
@@ -318,6 +323,10 @@ function captureBms(payload: unknown): void {
   if (!params || typeof params !== "object") return;
   let bms = false;
   for (const [k, v] of Object.entries(params)) {
+    if (BMS_ARRAY_FIELDS.has(k) && Array.isArray(v) && v.every((x) => typeof x === "number")) {
+      bmsFields[k] = v as number[];
+      continue;
+    }
     if (typeof v !== "number" || !Number.isFinite(v) || !BMS_PREFIX_RE.test(k)) continue;
     bmsFields[k] = v;
     if (k.startsWith("bmsMaster.")) bms = true;

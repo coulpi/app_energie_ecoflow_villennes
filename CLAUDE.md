@@ -123,7 +123,10 @@ Le worker fusionne en mémoire la dernière valeur de chaque champ numérique
 cellules / MOSFET (°C), `inv.outTemp`, `ems.chgRemainTime` /
 `dsgRemainTime` (min), codes de défaut (`bmsFault`, `errCode`,
 `inv.errCode`, `pd.errCode`, `mppt.faultCode`). `4294967295` = non
-supporté. Alertes du tableau de bord : défaut ≠ 0, cellules ≥ 45 °C,
+supporté. Tableaux gardés aussi : `bmsMaster.cellVol` (mV des 14 cellules,
+ordre BMS) et `cellTemp` (2 sondes) → « Détail par cellule » (écart à la
+médiane : > 40 mV à surveiller, > 80 mV faible). Alertes du tableau de
+bord : défaut ≠ 0, cellules ≥ 45 °C,
 écart > 200 mV, SoH < 70 %. Pas de pack d'extension (pas de `bmsSlave`).
 
 ### Détection "batterie pleine" dans follow-load

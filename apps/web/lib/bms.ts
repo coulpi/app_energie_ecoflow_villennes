@@ -5,7 +5,7 @@
 
 export interface BmsRaw {
   updatedAt: string | null;
-  fields: Record<string, number>;
+  fields: Record<string, number | number[]>;
 }
 
 export type Level = "ok" | "warn" | "bad";
@@ -38,6 +38,10 @@ export interface BmsSummary {
   remainMin: number | null;
   direction: "charge" | "discharge" | "idle" | null;
   faults: Array<{ source: string; code: number }>;
+  /** Tension de chaque cellule (ordre BMS) et écart à la médiane. */
+  cells: Array<{ index: number; v: number; devMv: number; level: Level }> | null;
+  /** Sondes de température des cellules (°C). */
+  cellTemps: number[] | null;
 }
 
 // Codes de défaut / erreur surveillés (0 = rien à signaler).
@@ -58,6 +62,32 @@ const CELL_DIFF_BAD_MV = 200;
 // Température cellules (°C).
 const CELL_TEMP_WARN = 45;
 const CELL_TEMP_BAD = 55;
+// Écart d'une cellule à la médiane du pack (mV). Une cellule qui décroche
+// nettement des autres est la cause habituelle d'un écart élevé.
+const CELL_DEV_WARN_MV = 40;
+const CELL_DEV_BAD_MV = 80;
+
+const numArray = (v: unknown): number[] | null =>
+  Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "number" && Number.isFinite(x))
+    ? (v as number[])
+    : null;
+
+function cellDetail(mv: number[] | null): BmsSummary["cells"] {
+  if (!mv) return null;
+  const sorted = [...mv].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return mv.map((v, i) => {
+    const devMv = Math.round(v - median);
+    const a = Math.abs(devMv);
+    return {
+      index: i + 1,
+      v: v / 1000,
+      devMv,
+      level: a > CELL_DEV_BAD_MV ? "bad" : a > CELL_DEV_WARN_MV ? "warn" : "ok",
+    };
+  });
+}
 
 export function summarizeBms(raw: BmsRaw): BmsSummary {
   const f = raw.fields;
@@ -121,6 +151,8 @@ export function summarizeBms(raw: BmsRaw): BmsSummary {
           ? n("ems.dsgRemainTime")
           : null,
     direction,
+    cells: cellDetail(numArray(f["bmsMaster.cellVol"])),
+    cellTemps: numArray(f["bmsMaster.cellTemp"]),
     faults: FAULT_FIELDS.flatMap(([k, source]) => {
       const v = n(k);
       return v ? [{ source, code: v }] : [];
