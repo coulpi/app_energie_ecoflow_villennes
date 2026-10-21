@@ -111,6 +111,21 @@ Quelques secondes après chaque ping, le BMS pousse un broadcast complet
 (SoC, inputW, outputW). Sticky SoC réduit à **15 min** dans `snapshot.ts`
 (au-delà → null/`—` plutôt qu'une valeur fausse).
 
+### État BMS (carte « État de la batterie » sur `/battery`)
+
+Le worker fusionne en mémoire la dernière valeur de chaque champ numérique
+`bmsMaster.* / ems.* / inv.* / pd.* / mppt.*` reçu en MQTT (`captureBms`,
+`apps/worker/src/pollers/ecoflow.ts`, message BMS complet ~toutes les 30 s)
+→ `GET /battery/bms` → `/api/battery/bms` (résumé `summarizeBms`,
+`apps/web/lib/bms.ts`). Champs clés : `soh` (%), `cycles`, `designCap` /
+`fullCap` / `remainCap` (mAh), `vol` (mV), `amp` (mA, + = charge),
+`minCellVol` / `maxCellVol` / `maxVolDiff` (mV, 14 cellules), températures
+cellules / MOSFET (°C), `inv.outTemp`, `ems.chgRemainTime` /
+`dsgRemainTime` (min), codes de défaut (`bmsFault`, `errCode`,
+`inv.errCode`, `pd.errCode`, `mppt.faultCode`). `4294967295` = non
+supporté. Alertes du tableau de bord : défaut ≠ 0, cellules ≥ 45 °C,
+écart > 200 mV, SoH < 70 %. Pas de pack d'extension (pas de `bmsSlave`).
+
 ### Détection "batterie pleine" dans follow-load
 
 Si la **prise AC est ON depuis >2 min** et tire **<30 W** alors qu'on

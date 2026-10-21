@@ -5,6 +5,7 @@
 import { prisma } from "@/lib/prisma";
 import { periodRange } from "@/lib/costs";
 import { isNetwork2 } from "@/lib/networks";
+import { fetchBms } from "@/lib/bms";
 
 const BUCKET_MIN = 15;
 
@@ -283,6 +284,32 @@ export async function getAlerts(now = new Date()): Promise<DashAlert[]> {
       detail: a.message,
       at: a.startedAt,
     });
+  }
+
+  // État remonté par le BMS de la batterie (défauts, température,
+  // déséquilibre des cellules, santé). Ignoré si le worker ne répond pas.
+  const bms = await fetchBms(2000);
+  if (bms?.updatedAt) {
+    for (const f of bms.faults) {
+      out.push({ level: "critical", title: `Batterie : défaut ${f.source}`, detail: `Code ${f.code} remonté par le BMS.` });
+    }
+    if (bms.cellTempLevel && bms.cellTempLevel !== "ok") {
+      out.push({
+        level: bms.cellTempLevel === "bad" ? "critical" : "warning",
+        title: "Batterie chaude",
+        detail: `Cellules à ${bms.cellTempMax} °C.`,
+      });
+    }
+    if (bms.cellDiffLevel === "bad") {
+      out.push({
+        level: "warning",
+        title: "Cellules batterie déséquilibrées",
+        detail: `Écart de ${bms.cellDiffMv} mV entre cellules.`,
+      });
+    }
+    if (bms.sohPct !== null && bms.sohPct < 70) {
+      out.push({ level: "info", title: "Batterie usée", detail: `Santé (SoH) ${bms.sohPct} %, ${bms.cycles ?? "?"} cycles.` });
+    }
   }
 
   const rank: Record<AlertLevel, number> = { critical: 0, warning: 1, info: 2 };

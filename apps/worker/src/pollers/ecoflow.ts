@@ -299,6 +299,32 @@ async function recordMqttReading(
   }
 }
 
+// État BMS consolidé : dernière valeur de chaque champ numérique bmsMaster.*,
+// ems.*, inv.*, pd.*, mppt.* reçu en MQTT (les messages sont partiels, on
+// fusionne). Lu par GET /battery/bms pour la carte « État de la batterie ».
+const BMS_PREFIX_RE = /^(bmsMaster|ems|inv|pd|mppt)\./;
+const bmsFields: Record<string, number> = {};
+let bmsUpdatedAtMs = 0;
+
+export function getBmsState(): { updatedAt: string | null; fields: Record<string, number> } {
+  return {
+    updatedAt: bmsUpdatedAtMs ? new Date(bmsUpdatedAtMs).toISOString() : null,
+    fields: { ...bmsFields },
+  };
+}
+
+function captureBms(payload: unknown): void {
+  const params = (payload as { params?: Record<string, unknown> } | null)?.params;
+  if (!params || typeof params !== "object") return;
+  let bms = false;
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v !== "number" || !Number.isFinite(v) || !BMS_PREFIX_RE.test(k)) continue;
+    bmsFields[k] = v;
+    if (k.startsWith("bmsMaster.")) bms = true;
+  }
+  if (bms) bmsUpdatedAtMs = Date.now();
+}
+
 async function handlePrivateMessage(
   batteries: Battery[],
   sn: string,
@@ -306,6 +332,7 @@ async function handlePrivateMessage(
 ): Promise<void> {
   pushRecv(sn, payload);
   captureSlowChg(payload);
+  captureBms(payload);
   try {
     const device = batteries.find((b) => b.externalId === sn);
     if (!device) return;

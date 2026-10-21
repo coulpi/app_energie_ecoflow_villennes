@@ -4,6 +4,7 @@ import { getDashboardSnapshot } from "@/lib/snapshot";
 import { getSeries } from "@/lib/dashboard";
 import BatteryControl from "@/components/BatteryControl";
 import BatteryModeCard from "@/components/BatteryModeCard";
+import BmsCard from "@/components/BmsCard";
 import { PowerChart } from "@/components/charts";
 import { fmtPower, Icon, KpiCard, PageHeader, Section } from "@/components/ui";
 import { ModeChip } from "@/components/widgets";
@@ -100,6 +101,8 @@ export default async function BatteryPage() {
       </div>
 
       <BatteryModeCard initial={s} />
+
+      <BmsCard />
 
       {/* Réglages du pilotage automatique : grisés et inactifs en mode
           manuel (le worker ne les applique plus). */}

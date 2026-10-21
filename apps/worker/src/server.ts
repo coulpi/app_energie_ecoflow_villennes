@@ -15,6 +15,7 @@ import {
   getEcoFlowPrivateMqtt,
   getRecentEcoFlowMessages,
   publishPowerStreamCommand,
+  getBmsState,
 } from "./pollers/ecoflow.js";
 import { getFollowLoadState } from "./rules/follow-load.js";
 import {
@@ -102,6 +103,13 @@ export function startHttpServer(): http.Server {
         await detectLoadsOnce();
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      // État BMS consolidé (dernières valeurs reçues en MQTT).
+      if (req.method === "GET" && url.pathname === "/battery/bms") {
+        res.writeHead(200);
+        res.end(JSON.stringify(getBmsState()));
         return;
       }
 
