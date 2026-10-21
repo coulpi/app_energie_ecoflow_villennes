@@ -181,6 +181,12 @@ export function evalCondition(
 }
 
 export async function evaluateRules(now = new Date()): Promise<void> {
+  // Mode manuel : aucune règle n'agit sur la batterie / la prise AC.
+  const ctrl = await prisma.controlState.findUnique({
+    where: { key: "default" },
+    select: { mode: true },
+  });
+  if (ctrl?.mode === "MANUAL") return;
   const snapshot = await buildSnapshot(now);
   const rules = await prisma.automationRule.findMany({
     where: { enabled: true },

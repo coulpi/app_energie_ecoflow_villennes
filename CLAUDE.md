@@ -205,6 +205,26 @@ Bilan énergétique forcé : `consumption = production + grid_signed + ps`
 
 Capacité batterie : `BATTERY_CAPACITY_WH = 2016` (Delta Max 2000).
 
+## Mode MANUAL (pilotage manuel de la batterie)
+
+Bascule « Automatique / Manuel » en tête de `/battery`
+(`components/BatteryModeCard.tsx` → `POST /api/control/mode`). En
+`MANUAL`, l'utilisateur pilote la batterie depuis l'app EcoFlow et la
+prise AC de charge depuis `/battery` (`POST /api/control/battery-plug`
+`{on}` → worker `POST /battery/plug`, renvoie `delivered=false` si la
+prise est hors ligne). Le worker n'envoie alors **aucune** commande :
+
+- `tickFollowLoad` sort immédiatement (ni programme quotidien, ni
+  forçage, ni Tempo, ni PowerStream) ; un forçage en cours est abandonné
+  sans restauration BMS / PowerStream (aussi remis à null par l'API).
+- `evaluateRules` (moteur de règles) et `safetyTick` (prise forcée ON à
+  SoC critique) ne font rien.
+- L'agent LLM enregistre sa proposition sans l'appliquer
+  (`appliedJson = { skipped: "mode manuel" }`).
+
+Repasser en « Automatique » remet `FOLLOW_LOAD` ; la boucle resynchronise
+l'état réel de la prise au tick suivant.
+
 ## Mode FOLLOW_LOAD (`apps/worker/src/rules/follow-load.ts`)
 
 Auto-conso bidirectionnelle : à chaque tick (toutes les `POLL_INTERVAL_SECONDS`) :

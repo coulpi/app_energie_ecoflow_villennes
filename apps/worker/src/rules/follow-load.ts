@@ -531,6 +531,22 @@ export async function tickFollowLoad(): Promise<void> {
     | null;
   if (!ctrl) return;
 
+  // === Mode manuel : l'utilisateur pilote la batterie depuis l'app
+  // EcoFlow et la prise AC depuis /battery. On n'envoie plus aucune
+  // commande (ni programme quotidien, ni forçage, ni Tempo, ni PowerStream).
+  // Un forçage en cours est simplement abandonné (pas de restauration
+  // BMS/PowerStream : c'est l'utilisateur qui a la main).
+  if (ctrl.mode === "MANUAL") {
+    if (ctrl.forceChargeSoc != null) {
+      await prisma.controlState.update({
+        where: { key: "default" },
+        data: { forceChargeSoc: null, forceChargeStartAt: null, forceChargeEndAt: null } as never,
+      });
+      log.info("force-charge: abandonné (passage en mode manuel)");
+    }
+    return;
+  }
+
   // === Programme quotidien : arme le forçage à l'heure dite ===
   await maybeArmDailyForceCharge(ctrl);
 

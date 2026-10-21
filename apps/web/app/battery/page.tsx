@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getDashboardSnapshot } from "@/lib/snapshot";
 import { getSeries } from "@/lib/dashboard";
 import BatteryControl from "@/components/BatteryControl";
+import BatteryModeCard from "@/components/BatteryModeCard";
 import { PowerChart } from "@/components/charts";
 import { fmtPower, Icon, KpiCard, PageHeader, Section } from "@/components/ui";
 import { ModeChip } from "@/components/widgets";
@@ -46,6 +47,7 @@ export default async function BatteryPage() {
   const p = s.batteryPowerW ?? 0; // + décharge, − charge
   const pw = fmtPower(Math.abs(p));
   const psOn = s.powerstreamPriority === 0;
+  const manual = (ctrl?.mode ?? s.controlMode) === "MANUAL";
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-[1500px] mx-auto">
@@ -97,6 +99,20 @@ export default async function BatteryPage() {
         />
       </div>
 
+      <BatteryModeCard initial={s} />
+
+      {/* Réglages du pilotage automatique : grisés et inactifs en mode
+          manuel (le worker ne les applique plus). */}
+      <div
+        className={`space-y-5 sm:space-y-6 ${manual ? "opacity-45 pointer-events-none select-none" : ""}`}
+        aria-disabled={manual || undefined}
+      >
+      {manual && (
+        <p className="text-sm text-amber-400">
+          Mode manuel actif : recharge forcée, programme quotidien, décharge Tempo, règles et agent
+          IA sont suspendus.
+        </p>
+      )}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5">
         <div className="xl:col-span-2 min-w-0">
           <ForceChargeCard />
@@ -126,6 +142,7 @@ export default async function BatteryPage() {
       </div>
 
       <BatteryControl initial={s} />
+      </div>
 
       <Section title="Activité sur 24 h" sub="Puissance batterie (+ décharge / − charge) et production solaire">
         <PowerChart

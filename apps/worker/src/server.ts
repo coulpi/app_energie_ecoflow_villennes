@@ -23,6 +23,8 @@ import {
 } from "./pollers/apsystems.js";
 import { getJacuzziState, setJacuzziFunction, setJacuzziPresetTemp, type IntexFunction } from "./rules/jacuzzi-control.js";
 import { prisma } from "./db.js";
+import { applyAction } from "./rules/actions.js";
+import { buildSnapshot } from "./rules/engine.js";
 
 const PORT = 3100;
 
@@ -230,6 +232,28 @@ export function startHttpServer(): http.Server {
           res.writeHead(200);
           res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
         }
+        return;
+      }
+
+      // Prise AC de charge batterie (Tuya) : marche / arrêt manuel depuis
+      // /battery. Corps : { on: boolean }. delivered=false si la prise est
+      // hors ligne (commande non délivrée par le cloud Tuya).
+      if (req.method === "POST" && url.pathname === "/battery/plug") {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { on?: unknown };
+        if (typeof body.on !== "boolean") {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "champ requis : on (boolean)" }));
+          return;
+        }
+        const result = await applyAction(
+          { action: body.on ? "tuya.switch.on" : "tuya.switch.off" },
+          { snapshot: (await buildSnapshot()) as never },
+        );
+        log.info("battery plug: commande manuelle", { on: body.on, result });
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true, result }));
         return;
       }
 

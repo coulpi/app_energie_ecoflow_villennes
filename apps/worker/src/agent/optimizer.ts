@@ -523,7 +523,14 @@ export async function runAgent(
     let applied = false;
     let appliedJson: unknown = null;
 
-    if (proposal && !dryRun) {
+    // Mode manuel : la proposition est enregistrée mais pas appliquée (ni
+    // réglages, ni changement de mode, ni règles).
+    const manual =
+      (await prisma.controlState.findUnique({ where: { key: "default" }, select: { mode: true } }))
+        ?.mode === "MANUAL";
+    if (proposal && !dryRun && manual) {
+      appliedJson = { skipped: "mode manuel" };
+    } else if (proposal && !dryRun) {
       const result = await applyProposal(proposal);
       applied = result.controlUpdated || result.rulesReplaced > 0;
       appliedJson = result;

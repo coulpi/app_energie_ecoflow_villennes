@@ -15,6 +15,13 @@ let lastForcedOn = 0;
  * permettre à la batterie de se réveiller / recharger.
  */
 export async function safetyTick(): Promise<void> {
+  // Mode manuel : l'utilisateur gère la prise lui-même (le BMS EcoFlow
+  // garde sa propre protection de décharge profonde).
+  const ctrl = await prisma.controlState.findUnique({
+    where: { key: "default" },
+    select: { mode: true },
+  });
+  if (ctrl?.mode === "MANUAL") return;
   const snap = await buildSnapshot();
   const battery = await prisma.device.findFirst({
     where: { enabled: true, role: "BATTERY" },
